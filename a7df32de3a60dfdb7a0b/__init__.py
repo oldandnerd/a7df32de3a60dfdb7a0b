@@ -992,7 +992,7 @@ class ProxyCookieLoader:
         self.proxies_and_cookies = proxies_and_cookies
         self.used_indices = set()
         self.total_proxies = len(proxies_and_cookies)
-    
+
     def load_next(self):
         while len(self.used_indices) < self.total_proxies:
             index = random.randint(0, self.total_proxies - 1)
@@ -1069,22 +1069,29 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
         except Exception as e:
             logging.error(f"An error occurred with cookies {cookie_file}: {e}")
 
-# Function to query tweets based on parameters
+# Function to query tweets based on parameters in parallel
 async def query(parameters) -> AsyncGenerator[Item, None]:
     max_oldness_seconds, maximum_items_to_collect, min_post_length, pick_default_keyword_weight = read_parameters(parameters)
-    keyword = generate_keyword(parameters, pick_default_keyword_weight)
+    keywords = generate_keywords(parameters, pick_default_keyword_weight)
     proxies_and_cookies = load_proxies_and_cookies()
     proxy_cookie_loader = ProxyCookieLoader(proxies_and_cookies)
-    async for item in scrape(keyword, max_oldness_seconds, min_post_length, maximum_items_to_collect, proxy_cookie_loader):
-        yield item
 
-# Function to generate a keyword based on parameters with specified probabilities
-def generate_keyword(parameters, pick_default_keyword_weight):
-    if random.random() < pick_default_keyword_weight:  # Use the specified weight
-        search_keyword = parameters.get("keyword", random.choice(SPECIAL_KEYWORDS_LIST))
-    else:
-        search_keyword = random.choice(SPECIAL_KEYWORDS_LIST)
-    return search_keyword
+    tasks = [scrape(keyword, max_oldness_seconds, min_post_length, maximum_items_to_collect // len(keywords), proxy_cookie_loader) for keyword in keywords]
+    
+    for task in asyncio.as_completed(tasks):
+        async for item in await task:
+            yield item
+
+# Function to generate multiple keywords based on parameters with specified probabilities
+def generate_keywords(parameters, pick_default_keyword_weight, count=4):
+    keywords = []
+    for _ in range(count):
+        if random.random() < pick_default_keyword_weight:  # Use the specified weight
+            search_keyword = parameters.get("keyword", random.choice(SPECIAL_KEYWORDS_LIST))
+        else:
+            search_keyword = random.choice(SPECIAL_KEYWORDS_LIST)
+        keywords.append(search_keyword)
+    return keywords
 
 # Default values for parameters
 DEFAULT_OLDNESS_SECONDS = 120
