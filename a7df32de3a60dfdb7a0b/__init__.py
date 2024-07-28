@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import random
 import hashlib
@@ -1001,6 +1002,10 @@ def generate_keyword(parameters):
 
     return search_keyword
 
+# Function to format created_at datetime
+def format_created_at(dt):
+    return dt.replace(microsecond=0).isoformat() + 'Z'
+
 # Function to scrape tweets based on query
 async def scrape(query: str, max_oldness_seconds: int, min_post_length: int) -> AsyncGenerator[Item, None]:
     client.load_cookies('/exorde/cookies.json')
@@ -1024,9 +1029,9 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int) -> 
             item = Item(
                 content=Content(content),
                 author=Author(hashlib.sha1(bytes(post_author, encoding="utf-8")).hexdigest()),
-                created_at=CreatedAt(tweet.created_at_datetime.replace(microsecond=0).isoformat() + 'Z'),
-                domain=Domain("x.com"),
-                url=Url(f"https://x.com/{tweet.user.screen_name}/status/{tweet.id}"),
+                created_at=CreatedAt(format_created_at(tweet.created_at_datetime)),
+                domain=Domain("twitter.com"),
+                url=Url(f"https://twitter.com/{tweet.user.screen_name}/status/{tweet.id}"),
                 external_id=ExternalId(str(tweet.id))
             )
             yield item
