@@ -1,5 +1,5 @@
 import asyncio
-import json
+import sys
 import logging
 import random
 import hashlib
@@ -1013,6 +1013,7 @@ def generate_keyword(parameters):
 def format_created_at(dt):
     return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
+
 # Function to scrape tweets based on query
 async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, cookie_files: list) -> AsyncGenerator[Item, None]:
     current_cookie_index = 0
@@ -1056,6 +1057,9 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, coo
                 logging.info(f"Yielding item: {item}")
                 yield item
             break  # Exit the loop if search is successful
+        except GeneratorExit:
+            logging.info("GeneratorExit exception caught, exiting the application.")
+            sys.exit(0)
         except twikit.errors.TooManyRequests as e:
             logging.error(f"Rate limit exceeded: {e}. Loading next cookies and retrying in 10 seconds...")
             load_cookie()
@@ -1063,7 +1067,6 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, coo
         except Exception as e:
             logging.error(f"An error occurred during tweet search: {e}")
             break
-
 
 # Function to query tweets based on parameters
 async def query(parameters) -> AsyncGenerator[Item, None]:
