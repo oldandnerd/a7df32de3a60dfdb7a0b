@@ -1006,11 +1006,10 @@ class ProxyCookieLoader:
         return self.load_next()  # Retry after resetting
 
 # Function to scrape tweets based on query
-async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, maximum_items_to_collect: int, proxy_cookie_loader: ProxyCookieLoader) -> List[Item]:
+async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, maximum_items_to_collect: int, proxy_cookie_loader: ProxyCookieLoader) -> AsyncGenerator[Item, None]:
     collected_items = 0
     current_time = datetime.now(timezone.utc)
     max_oldness_duration = timedelta(seconds=max_oldness_seconds)
-    items = []
 
     while collected_items < maximum_items_to_collect:
         proxy, cookie_file = proxy_cookie_loader.load_next()
@@ -1038,11 +1037,11 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                     url=Url(f"https://x.com/{tweet.user.screen_name}/status/{tweet.id}"),
                     external_id=ExternalId(str(tweet.id))
                 )
-                logging.info(f"Collected item: {item}")
-                items.append(item)
+                logging.info(f"Yielding item: {item}")
+                yield item
                 collected_items += 1
                 if collected_items >= maximum_items_to_collect:
-                    return items
+                    return
             break  # Exit the loop if search is successful
         except twikit.errors.TooManyRequests as e:
             logging.error(f"Rate limit exceeded: {e}. Retrying in 5 seconds...")
@@ -1069,8 +1068,6 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
             logging.error(f"User not found with cookies: {cookie_file}")
         except Exception as e:
             logging.error(f"An error occurred with cookies {cookie_file}: {e}")
-    
-    return items
 
 # Function to query tweets based on parameters in parallel
 async def query(parameters) -> AsyncGenerator[Item, None]:
@@ -1084,7 +1081,7 @@ async def query(parameters) -> AsyncGenerator[Item, None]:
     results = await asyncio.gather(*tasks)
 
     for result in results:
-        for item in result:
+        async for item in result:
             yield item
 
 # Function to generate multiple keywords based on parameters with specified probabilities
