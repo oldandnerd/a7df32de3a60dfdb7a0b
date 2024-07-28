@@ -967,6 +967,7 @@ SPECIAL_KEYWORDS_LIST = [
     "高級"
     ]
 ############
+
 # Load all cookies and proxies from the ips.txt file
 def load_proxies_and_cookies():
     cookies_folder = '/cookies'
@@ -1024,7 +1025,8 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                             continue
 
                         content = tweet.full_text.strip()
-                        if not content or len(content) < min_post_length:  # Check if content is empty or less than min length
+                        # Skip tweets with no text content or only media content
+                        if not content or re.match(r"^(?:pic\.twitter\.com|https?://t\.co/)\b", content):
                             logging.error(f"No valid content in tweet with URL: https://x.com/{tweet.user.screen_name}/status/{tweet.id}")
                             continue
                         
