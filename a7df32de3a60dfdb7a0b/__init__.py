@@ -1022,7 +1022,7 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                 if tweet_age > max_oldness_duration:
                     continue
 
-                content = tweet.full_text.strip()
+                content = tweet.text.strip()
                 # Skip tweets with no text content or only media content
                 if not content or len(content) < min_post_length or re.match(r"^(?:pic\.twitter\.com|https?://t\.co/)\b", content):
                     logging.debug(f"Skipped tweet with URL: https://x.com/{tweet.user.screen_name}/status/{tweet.id}")
