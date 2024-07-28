@@ -967,6 +967,7 @@ SPECIAL_KEYWORDS_LIST = [
     "高級"
     ]
 ############
+
 # Load all cookies and proxies from the ips.txt file
 def load_proxies_and_cookies():
     cookies_folder = '/cookies'
@@ -984,25 +985,31 @@ def load_proxies_and_cookies():
 def format_created_at(dt):
     return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
+# Function to handle loading proxy and cookie
+class ProxyCookieLoader:
+    def __init__(self, proxies_and_cookies):
+        self.proxies_and_cookies = proxies_and_cookies
+        self.used_indices = set()
+        self.total_proxies = len(proxies_and_cookies)
+    
+    def load_next(self):
+        while len(self.used_indices) < self.total_proxies:
+            index = random.randint(0, self.total_proxies - 1)
+            if index not in self.used_indices:
+                self.used_indices.add(index)
+                proxy, cookie_file = self.proxies_and_cookies[index]
+                client.load_cookies(cookie_file)
+                logging.info(f"Loaded cookies from: {cookie_file} with proxy: {proxy}")
+                return proxy, cookie_file
+        self.used_indices.clear()  # Reset the used indices after all proxies have been used once
+        return self.load_next()  # Retry after resetting
+
 # Function to scrape tweets based on query
-async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, maximum_items_to_collect: int, proxies_and_cookies: list) -> AsyncGenerator[Item, None]:
-    current_index = 0
+async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, maximum_items_to_collect: int, proxy_cookie_loader: ProxyCookieLoader) -> AsyncGenerator[Item, None]:
     collected_items = 0
-    total_proxies = len(proxies_and_cookies)
-
-    def load_proxy_and_cookie():
-        nonlocal current_index
-        if current_index >= total_proxies:
-            current_index = 0
-        proxy, cookie_file = proxies_and_cookies[current_index]
-        client.load_cookies(cookie_file)
-        logging.info(f"Loaded cookies from: {cookie_file} with proxy: {proxy}")
-        current_index += 1
-        return proxy, cookie_file
-
-    proxy, cookie_file = load_proxy_and_cookie()
 
     while collected_items < maximum_items_to_collect:
+        proxy, cookie_file = proxy_cookie_loader.load_next()
         try:
             async with httpx.AsyncClient(proxies=proxy) as session:
                 try:
@@ -1018,7 +1025,8 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                             continue
 
                         content = tweet.full_text.strip()
-                        if not content or len(content) < min_post_length:  # Check if content is empty or less than min length
+                        # Skip tweets with no text content or only media content
+                        if not content or re.match(r"^(?:pic\.twitter\.com|https?://t\.co/)\b", content):
                             logging.error(f"No valid content in tweet with URL: https://x.com/{tweet.user.screen_name}/status/{tweet.id}")
                             continue
                         
@@ -1038,55 +1046,43 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                             return
                     break  # Exit the loop if search is successful
                 except twikit.errors.TooManyRequests as e:
-                    logging.error(f"Rate limit exceeded: {e}. Loading next cookies and proxy and retrying in 5 seconds...")
-                    proxy, cookie_file = load_proxy_and_cookie()
+                    logging.error(f"Rate limit exceeded: {e}. Retrying in 5 seconds...")
                     await asyncio.sleep(5)
                 except twikit.errors.BadRequest as e:
                     logging.error(f"Bad request with cookies: {cookie_file}")
-                    proxy, cookie_file = load_proxy_and_cookie()
                 except twikit.errors.Unauthorized as e:
                     logging.error(f"Unauthorized access with cookies: {cookie_file}")
-                    proxy, cookie_file = load_proxy_and_cookie()
                 except twikit.errors.Forbidden as e:
                     logging.error(f"Forbidden access with cookies: {cookie_file}")
-                    proxy, cookie_file = load_proxy_and_cookie()
                 except twikit.errors.NotFound as e:
                     logging.error(f"Not found with cookies: {cookie_file}")
-                    proxy, cookie_file = load_proxy_and_cookie()
                 except twikit.errors.RequestTimeout as e:
                     logging.error(f"Request timeout with cookies: {cookie_file}")
-                    proxy, cookie_file = load_proxy_and_cookie()
                 except twikit.errors.ServerError as e:
                     logging.error(f"Server error with cookies: {cookie_file}")
-                    proxy, cookie_file = load_proxy_and_cookie()
                 except twikit.errors.AccountSuspended as e:
                     logging.error(f"Account suspended with cookies: {cookie_file}")
-                    proxy, cookie_file = load_proxy_and_cookie()
                 except twikit.errors.AccountLocked as e:
                     logging.error(f"Account locked with cookies: {cookie_file}")
-                    proxy, cookie_file = load_proxy_and_cookie()
                 except twikit.errors.UserUnavailable as e:
                     logging.error(f"User unavailable with cookies: {cookie_file}")
-                    proxy, cookie_file = load_proxy_and_cookie()
                 except twikit.errors.UserNotFound as e:
                     logging.error(f"User not found with cookies: {cookie_file}")
-                    proxy, cookie_file = load_proxy_and_cookie()
                 except Exception as e:
                     logging.error(f"An error occurred with cookies {cookie_file}: {e}")
-                    proxy, cookie_file = load_proxy_and_cookie()
         except GeneratorExit:
             logging.info("Generator exit requested, closing async generator gracefully.")
             raise
         finally:
             logging.info("Exiting the scrape function.")
 
-
 # Function to query tweets based on parameters
 async def query(parameters) -> AsyncGenerator[Item, None]:
     max_oldness_seconds, maximum_items_to_collect, min_post_length, pick_default_keyword_weight = read_parameters(parameters)
     keyword = generate_keyword(parameters, pick_default_keyword_weight)
     proxies_and_cookies = load_proxies_and_cookies()
-    async for item in scrape(keyword, max_oldness_seconds, min_post_length, maximum_items_to_collect, proxies_and_cookies):
+    proxy_cookie_loader = ProxyCookieLoader(proxies_and_cookies)
+    async for item in scrape(keyword, max_oldness_seconds, min_post_length, maximum_items_to_collect, proxy_cookie_loader):
         yield item
 
 # Function to generate a keyword based on parameters with specified probabilities
@@ -1122,3 +1118,4 @@ def read_parameters(parameters):
         min_post_length,
         pick_default_keyword_weight,
     )
+
