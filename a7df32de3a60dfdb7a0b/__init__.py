@@ -1041,7 +1041,7 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, coo
                     continue
 
                 content = tweet.full_text.strip()
-                if len(content) < min_post_length:
+                if not content or len(content) < min_post_length:  # Check if content is empty or less than min length
                     continue
                 
                 post_author = tweet.user.name if tweet.user.name else '[deleted]'
@@ -1063,6 +1063,7 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, coo
         except Exception as e:
             logging.error(f"An error occurred during tweet search: {e}")
             break
+
 
 # Function to query tweets based on parameters
 async def query(parameters) -> AsyncGenerator[Item, None]:

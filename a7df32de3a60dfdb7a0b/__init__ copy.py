@@ -1075,17 +1075,3 @@ async def query(parameters) -> AsyncGenerator[Item, None]:
         collected_items += 1
         if collected_items >= maximum_items_to_collect:
             break
-
-# Run the process
-async def main():
-    parameters = {
-        "max_oldness_seconds": 100,
-        "maximum_items_to_collect": 100,
-        "min_post_length": 15,
-        "keyword": "blockchain"
-    }
-    async for item in query(parameters):
-        print(item)
-
-# Execute the main function
-asyncio.run(main())
