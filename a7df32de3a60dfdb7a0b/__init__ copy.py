@@ -3,6 +3,7 @@ import json
 import logging
 import random
 import hashlib
+import os
 from datetime import datetime, timezone, timedelta
 from typing import AsyncGenerator
 from exorde_data import Item, Content, Author, CreatedAt, Url, Domain, ExternalId
@@ -972,6 +973,12 @@ SPECIAL_KEYWORDS_LIST = [
     ]
 ############
 
+# Load all cookies from the /cookies folder
+def load_all_cookies():
+    cookies_folder = '/cookies'
+    cookie_files = [os.path.join(cookies_folder, f) for f in os.listdir(cookies_folder) if f.endswith('.json')]
+    return cookie_files
+
 # Function to read parameters
 def read_parameters(parameters):
     if parameters and isinstance(parameters, dict):
@@ -1007,51 +1014,78 @@ def format_created_at(dt):
     return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 # Function to scrape tweets based on query
-async def scrape(query: str, max_oldness_seconds: int, min_post_length: int) -> AsyncGenerator[Item, None]:
-    client.load_cookies('/exorde/cookies.json')
-    logging.info(f"Starting scrape with query: {query}")
-    try:
-        search_results = await client.search_tweet(query=query, product='Latest')
-        logging.info("Search successful.")
-        
-        current_time = datetime.now(timezone.utc)
-        max_oldness_duration = timedelta(seconds=max_oldness_seconds)
-        
-        for tweet in search_results:
-            tweet_age = current_time - tweet.created_at_datetime
-            if tweet_age > max_oldness_duration:
-                continue
+async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, cookie_files: list) -> AsyncGenerator[Item, None]:
+    current_cookie_index = 0
 
-            content = tweet.full_text.strip()
-            if len(content) < min_post_length:
-                continue
+    def load_cookie():
+        nonlocal current_cookie_index
+        if current_cookie_index >= len(cookie_files):
+            current_cookie_index = 0
+        client.load_cookies(cookie_files[current_cookie_index])
+        logging.info(f"Loaded cookies from: {cookie_files[current_cookie_index]}")
+        current_cookie_index += 1
+
+    load_cookie()
+
+    while True:
+        try:
+            search_results = await client.search_tweet(query=query, product='Latest')
+            logging.info("Search successful.")
             
-            post_author = tweet.user.name if tweet.user.name else '[deleted]'
-            item = Item(
-                content=Content(content),
-                author=Author(hashlib.sha1(bytes(post_author, encoding="utf-8")).hexdigest()),
-                created_at=CreatedAt(format_created_at(tweet.created_at_datetime)),
-                domain=Domain("twitter.com"),
-                url=Url(f"https://twitter.com/{tweet.user.screen_name}/status/{tweet.id}"),
-                external_id=ExternalId(str(tweet.id))
-            )
-            logging.info(f"Yielding item: {item}")
-            yield item
-    except twikit.errors.TooManyRequests as e:
-        logging.error(f"Rate limit exceeded: {e}. Retrying in 10 seconds...")
-        await asyncio.sleep(10)
-        async for item in scrape(query, max_oldness_seconds, min_post_length):  # Retry the scrape function
-            yield item
-    except Exception as e:
-        logging.error(f"An error occurred during tweet search: {e}")
+            current_time = datetime.now(timezone.utc)
+            max_oldness_duration = timedelta(seconds=max_oldness_seconds)
+            
+            for tweet in search_results:
+                tweet_age = current_time - tweet.created_at_datetime
+                if tweet_age > max_oldness_duration:
+                    continue
+
+                content = tweet.full_text.strip()
+                if len(content) < min_post_length:
+                    continue
+                
+                post_author = tweet.user.name if tweet.user.name else '[deleted]'
+                item = Item(
+                    content=Content(content),
+                    author=Author(hashlib.sha1(bytes(post_author, encoding="utf-8")).hexdigest()),
+                    created_at=CreatedAt(format_created_at(tweet.created_at_datetime)),
+                    domain=Domain("twitter.com"),
+                    url=Url(f"https://twitter.com/{tweet.user.screen_name}/status/{tweet.id}"),
+                    external_id=ExternalId(str(tweet.id))
+                )
+                logging.info(f"Yielding item: {item}")
+                yield item
+            break  # Exit the loop if search is successful
+        except twikit.errors.TooManyRequests as e:
+            logging.error(f"Rate limit exceeded: {e}. Loading next cookies and retrying in 10 seconds...")
+            load_cookie()
+            await asyncio.sleep(10)
+        except Exception as e:
+            logging.error(f"An error occurred during tweet search: {e}")
+            break
 
 # Function to query tweets based on parameters
 async def query(parameters) -> AsyncGenerator[Item, None]:
     max_oldness_seconds, maximum_items_to_collect, min_post_length, pick_default_keyword_weight = read_parameters(parameters)
     keyword = generate_keyword(parameters)
+    cookie_files = load_all_cookies()
     collected_items = 0
-    async for item in scrape(keyword, max_oldness_seconds, min_post_length):
+    async for item in scrape(keyword, max_oldness_seconds, min_post_length, cookie_files):
         yield item
         collected_items += 1
         if collected_items >= maximum_items_to_collect:
             break
+
+# Run the process
+async def main():
+    parameters = {
+        "max_oldness_seconds": 100,
+        "maximum_items_to_collect": 100,
+        "min_post_length": 15,
+        "keyword": "blockchain"
+    }
+    async for item in query(parameters):
+        print(item)
+
+# Execute the main function
+asyncio.run(main())

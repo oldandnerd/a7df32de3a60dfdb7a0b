@@ -1031,7 +1031,7 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, coo
     while True:
         try:
             search_results = await client.search_tweet(query=query, product='Latest')
-            logging.info("Search successful.")
+            logging.info(f"Search successful for query: {query}")
             
             current_time = datetime.now(timezone.utc)
             max_oldness_duration = timedelta(seconds=max_oldness_seconds)
@@ -1076,3 +1076,4 @@ async def query(parameters) -> AsyncGenerator[Item, None]:
         collected_items += 1
         if collected_items >= maximum_items_to_collect:
             break
+
