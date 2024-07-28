@@ -1029,7 +1029,7 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
     load_cookie()
 
     try:
-        while True:
+        while collected_items < maximum_items_to_collect:
             try:
                 search_results = await client.search_tweet(query=query, product='Latest')
                 logging.info("Search successful.")
@@ -1070,8 +1070,15 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                 break
     except GeneratorExit:
         logging.info("Generator exit requested, closing async generator gracefully.")
+        # Finalize state: Simulate closing network connections if any
+        # For example, if you had a session or connection to close, you would do it here
+        # await client.close()  # If the client had a close method or similar
     finally:
         logging.info("Exiting the scrape function.")
+        # Perform any additional final cleanup actions here if necessary.
+        # Ensure all pending tasks or connections are finalized
+        # For example, ensure the client state is reset or all tasks are completed
+
 
 
 # Function to query tweets based on parameters

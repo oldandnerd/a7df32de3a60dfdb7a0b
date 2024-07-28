@@ -11,6 +11,7 @@ setup(
         "python-dotenv",
         "selenium==4.2.0",
         "twikit",
+        "httpx-socks",
         "pathlib"
     ],
     extras_require={"dev": ["pytest", "pytest-cov", "pytest-asyncio"]},
