@@ -1076,7 +1076,7 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                 except twikit.errors.TooManyRequests as e:
                     logging.error(f"Rate limit exceeded: {e}. Loading next cookies and proxy and retrying in 10 seconds...")
                     proxy, cookie_file = load_proxy_and_cookie()
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(5)
                 except twikit.errors.BadRequest as e:
                     logging.error(f"Bad request with cookies: {cookie_file}")
                     break
