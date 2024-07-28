@@ -973,6 +973,7 @@ SPECIAL_KEYWORDS_LIST = [
     ]
 ############
 
+
 # Load all cookies from the /cookies folder
 def load_all_cookies():
     cookies_folder = '/cookies'
@@ -1053,9 +1054,9 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, coo
                     url=Url(f"https://twitter.com/{tweet.user.screen_name}/status/{tweet.id}"),
                     external_id=ExternalId(str(tweet.id))
                 )
-                logging.info(f"Yielding item: {item}")
-                yield item
-            break  # Exit the loop if search is successful
+                if content:
+                    logging.info(f"Yielding item: {item}")
+                    yield item
         except twikit.errors.TooManyRequests as e:
             logging.error(f"Rate limit exceeded: {e}. Loading next cookies and retrying in 10 seconds...")
             load_cookie()
