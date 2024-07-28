@@ -1033,7 +1033,7 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                     content=Content(content),
                     author=Author(hashlib.sha1(bytes(post_author, encoding="utf-8")).hexdigest()),
                     created_at=CreatedAt(format_created_at(tweet.created_at_datetime)),
-                    domain=Domain("https://x.com"),
+                    domain=Domain("x.com"),
                     url=Url(f"https://x.com/{tweet.user.screen_name}/status/{tweet.id}"),
                     external_id=ExternalId(str(tweet.id))
                 )
