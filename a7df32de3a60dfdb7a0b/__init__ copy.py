@@ -968,6 +968,7 @@ SPECIAL_KEYWORDS_LIST = [
     ]
 ############
 
+
 # Load all cookies and proxies from the ips.txt file
 def load_proxies_and_cookies():
     cookies_folder = '/cookies'
@@ -1007,74 +1008,66 @@ class ProxyCookieLoader:
 # Function to scrape tweets based on query
 async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, maximum_items_to_collect: int, proxy_cookie_loader: ProxyCookieLoader) -> AsyncGenerator[Item, None]:
     collected_items = 0
+    current_time = datetime.now(timezone.utc)
+    max_oldness_duration = timedelta(seconds=max_oldness_seconds)
 
     while collected_items < maximum_items_to_collect:
         proxy, cookie_file = proxy_cookie_loader.load_next()
         try:
-            async with httpx.AsyncClient(proxies=proxy) as session:
-                try:
-                    search_results = await client.search_tweet(query=query, product='Latest')
-                    logging.info("Search successful.")
-                    
-                    current_time = datetime.now(timezone.utc)
-                    max_oldness_duration = timedelta(seconds=max_oldness_seconds)
-                    
-                    for tweet in search_results:
-                        tweet_age = current_time - tweet.created_at_datetime
-                        if tweet_age > max_oldness_duration:
-                            continue
+            search_results = await client.search_tweet(query=query, product='Latest')
+            logging.info("Search successful.")
 
-                        content = tweet.full_text.strip()
-                        # Skip tweets with no text content or only media content
-                        if not content or re.match(r"^(?:pic\.twitter\.com|https?://t\.co/)\b", content):
-                            logging.error(f"No valid content in tweet with URL: https://x.com/{tweet.user.screen_name}/status/{tweet.id}")
-                            continue
-                        
-                        post_author = tweet.user.name if tweet.user.name else '[deleted]'
-                        item = Item(
-                            content=Content(content),
-                            author=Author(hashlib.sha1(bytes(post_author, encoding="utf-8")).hexdigest()),
-                            created_at=CreatedAt(format_created_at(tweet.created_at_datetime)),
-                            domain=Domain("https://x.com"),
-                            url=Url(f"https://x.com/{tweet.user.screen_name}/status/{tweet.id}"),
-                            external_id=ExternalId(str(tweet.id))
-                        )
-                        logging.info(f"Yielding item: {item}")
-                        yield item
-                        collected_items += 1
-                        if collected_items >= maximum_items_to_collect:
-                            return
-                    break  # Exit the loop if search is successful
-                except twikit.errors.TooManyRequests as e:
-                    logging.error(f"Rate limit exceeded: {e}. Retrying in 5 seconds...")
-                    await asyncio.sleep(5)
-                except twikit.errors.BadRequest as e:
-                    logging.error(f"Bad request with cookies: {cookie_file}")
-                except twikit.errors.Unauthorized as e:
-                    logging.error(f"Unauthorized access with cookies: {cookie_file}")
-                except twikit.errors.Forbidden as e:
-                    logging.error(f"Forbidden access with cookies: {cookie_file}")
-                except twikit.errors.NotFound as e:
-                    logging.error(f"Not found with cookies: {cookie_file}")
-                except twikit.errors.RequestTimeout as e:
-                    logging.error(f"Request timeout with cookies: {cookie_file}")
-                except twikit.errors.ServerError as e:
-                    logging.error(f"Server error with cookies: {cookie_file}")
-                except twikit.errors.AccountSuspended as e:
-                    logging.error(f"Account suspended with cookies: {cookie_file}")
-                except twikit.errors.AccountLocked as e:
-                    logging.error(f"Account locked with cookies: {cookie_file}")
-                except twikit.errors.UserUnavailable as e:
-                    logging.error(f"User unavailable with cookies: {cookie_file}")
-                except twikit.errors.UserNotFound as e:
-                    logging.error(f"User not found with cookies: {cookie_file}")
-                except Exception as e:
-                    logging.error(f"An error occurred with cookies {cookie_file}: {e}")
-        except GeneratorExit:
-            logging.info("Generator exit requested, closing async generator gracefully.")
-            raise
-        finally:
-            logging.info("Exiting the scrape function.")
+            for tweet in search_results:
+                tweet_age = current_time - tweet.created_at_datetime
+                if tweet_age > max_oldness_duration:
+                    continue
+
+                content = tweet.text.strip()
+                # Skip tweets with no text content or only media content
+                if not content or len(content) < min_post_length or re.match(r"^(?:pic\.twitter\.com|https?://t\.co/)\b", content):
+                    logging.debug(f"Skipped tweet with URL: https://x.com/{tweet.user.screen_name}/status/{tweet.id}")
+                    continue
+
+                post_author = tweet.user.name if tweet.user.name else '[deleted]'
+                item = Item(
+                    content=Content(content),
+                    author=Author(hashlib.sha1(bytes(post_author, encoding="utf-8")).hexdigest()),
+                    created_at=CreatedAt(format_created_at(tweet.created_at_datetime)),
+                    domain=Domain("x.com"),
+                    url=Url(f"https://x.com/{tweet.user.screen_name}/status/{tweet.id}"),
+                    external_id=ExternalId(str(tweet.id))
+                )
+                logging.info(f"Yielding item: {item}")
+                yield item
+                collected_items += 1
+                if collected_items >= maximum_items_to_collect:
+                    return
+            break  # Exit the loop if search is successful
+        except twikit.errors.TooManyRequests as e:
+            logging.error(f"Rate limit exceeded: {e}. Retrying in 5 seconds...")
+            await asyncio.sleep(5)
+        except twikit.errors.BadRequest as e:
+            logging.error(f"Bad request with cookies: {cookie_file}")
+        except twikit.errors.Unauthorized as e:
+            logging.error(f"Unauthorized access with cookies: {cookie_file}")
+        except twikit.errors.Forbidden as e:
+            logging.error(f"Forbidden access with cookies: {cookie_file}")
+        except twikit.errors.NotFound as e:
+            logging.error(f"Not found with cookies: {cookie_file}")
+        except twikit.errors.RequestTimeout as e:
+            logging.error(f"Request timeout with cookies: {cookie_file}")
+        except twikit.errors.ServerError as e:
+            logging.error(f"Server error with cookies: {cookie_file}")
+        except twikit.errors.AccountSuspended as e:
+            logging.error(f"Account suspended with cookies: {cookie_file}")
+        except twikit.errors.AccountLocked as e:
+            logging.error(f"Account locked with cookies: {cookie_file}")
+        except twikit.errors.UserUnavailable as e:
+            logging.error(f"User unavailable with cookies: {cookie_file}")
+        except twikit.errors.UserNotFound as e:
+            logging.error(f"User not found with cookies: {cookie_file}")
+        except Exception as e:
+            logging.error(f"An error occurred with cookies {cookie_file}: {e}")
 
 # Function to query tweets based on parameters
 async def query(parameters) -> AsyncGenerator[Item, None]:
@@ -1118,4 +1111,3 @@ def read_parameters(parameters):
         min_post_length,
         pick_default_keyword_weight,
     )
-
