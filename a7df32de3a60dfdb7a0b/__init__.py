@@ -973,7 +973,6 @@ SPECIAL_KEYWORDS_LIST = [
     ]
 ############
 
-
 # Load all cookies from the /cookies folder
 def load_all_cookies():
     cookies_folder = '/cookies'
@@ -1031,7 +1030,7 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, coo
     while True:
         try:
             search_results = await client.search_tweet(query=query, product='Latest')
-            logging.info(f"Search successful for query: {query}")
+            logging.info("Search successful.")
             
             current_time = datetime.now(timezone.utc)
             max_oldness_duration = timedelta(seconds=max_oldness_seconds)
@@ -1054,9 +1053,9 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, coo
                     url=Url(f"https://twitter.com/{tweet.user.screen_name}/status/{tweet.id}"),
                     external_id=ExternalId(str(tweet.id))
                 )
-                if content:
-                    logging.info(f"Yielding item: {item}")
-                    yield item
+                logging.info(f"Yielding item: {item}")
+                yield item
+            break  # Exit the loop if search is successful
         except twikit.errors.TooManyRequests as e:
             logging.error(f"Rate limit exceeded: {e}. Loading next cookies and retrying in 10 seconds...")
             load_cookie()
@@ -1076,4 +1075,3 @@ async def query(parameters) -> AsyncGenerator[Item, None]:
         collected_items += 1
         if collected_items >= maximum_items_to_collect:
             break
-
