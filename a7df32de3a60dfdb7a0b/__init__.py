@@ -971,7 +971,6 @@ SPECIAL_KEYWORDS_LIST = [
     "高級"
     ]
 ############
-
 # Function to read parameters
 def read_parameters(parameters):
     if parameters and isinstance(parameters, dict):
@@ -1004,7 +1003,7 @@ def generate_keyword(parameters):
 
 # Function to format created_at datetime
 def format_created_at(dt):
-    return dt.replace(microsecond=0).isoformat() + 'Z'
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 # Function to scrape tweets based on query
 async def scrape(query: str, max_oldness_seconds: int, min_post_length: int) -> AsyncGenerator[Item, None]:
@@ -1053,4 +1052,3 @@ async def query(parameters) -> AsyncGenerator[Item, None]:
         collected_items += 1
         if collected_items >= maximum_items_to_collect:
             break
-
