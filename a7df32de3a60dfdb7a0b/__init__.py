@@ -17,6 +17,7 @@ client = twikit.Client(language='en-US')
 logging.basicConfig(level=logging.INFO)
 logging.getLogger('httpx').setLevel(logging.WARNING)  # Set httpx logging level to WARNING to suppress info logs
 
+
 ##### SPECIAL MODE
 # TOP 222
 SPECIAL_KEYWORDS_LIST = [    
@@ -1013,37 +1014,35 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
     while collected_items < maximum_items_to_collect:
         proxy, cookie_file = proxy_cookie_loader.load_next()
         try:
-            async with httpx.AsyncClient(proxies={"http": proxy, "https": proxy}) as session:
-                client.session = session
-                search_results = await client.search_tweet(query=query, product='Latest')
-                logging.info("Search successful.")
+            search_results = await client.search_tweet(query=query, product='Latest')
+            logging.info("Search successful.")
 
-                for tweet in search_results:
-                    tweet_age = current_time - tweet.created_at_datetime
-                    if tweet_age > max_oldness_duration:
-                        continue
+            for tweet in search_results:
+                tweet_age = current_time - tweet.created_at_datetime
+                if tweet_age > max_oldness_duration:
+                    continue
 
-                    content = tweet.full_text.strip()
-                    # Skip tweets with no alphabetic characters or only media content
-                    if not content or len(content) < min_post_length or not re.search('[a-zA-Z]', content):
-                        logging.debug(f"Skipped tweet with URL: https://x.com/{tweet.user.screen_name}/status/{tweet.id}")
-                        continue
+                content = tweet.text.strip()
+                # Skip tweets with no text content or only media content
+                if not content or len(content) < min_post_length or re.match(r"^(?:pic\.twitter\.com|https?://t\.co/)\b", content):
+                    logging.debug(f"Skipped tweet with URL: https://x.com/{tweet.user.screen_name}/status/{tweet.id}")
+                    continue
 
-                    post_author = tweet.user.name if tweet.user.name else '[deleted]'
-                    item = Item(
-                        content=Content(content),
-                        author=Author(hashlib.sha1(bytes(post_author, encoding="utf-8")).hexdigest()),
-                        created_at=CreatedAt(format_created_at(tweet.created_at_datetime)),
-                        domain=Domain("https://x.com"),
-                        url=Url(f"https://x.com/{tweet.user.screen_name}/status/{tweet.id}"),
-                        external_id=ExternalId(str(tweet.id))
-                    )
-                    logging.info(f"Yielding item: {item}")
-                    yield item
-                    collected_items += 1
-                    if collected_items >= maximum_items_to_collect:
-                        return
-                break  # Exit the loop if search is successful
+                post_author = tweet.user.name if tweet.user.name else '[deleted]'
+                item = Item(
+                    content=Content(content),
+                    author=Author(hashlib.sha1(bytes(post_author, encoding="utf-8")).hexdigest()),
+                    created_at=CreatedAt(format_created_at(tweet.created_at_datetime)),
+                    domain=Domain("x.com"),
+                    url=Url(f"https://x.com/{tweet.user.screen_name}/status/{tweet.id}"),
+                    external_id=ExternalId(str(tweet.id))
+                )
+                logging.info(f"Yielding item: {item}")
+                yield item
+                collected_items += 1
+                if collected_items >= maximum_items_to_collect:
+                    return
+            break  # Exit the loop if search is successful
         except twikit.errors.TooManyRequests as e:
             logging.error(f"Rate limit exceeded: {e}. Retrying in 5 seconds...")
             await asyncio.sleep(5)
