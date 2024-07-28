@@ -1014,8 +1014,9 @@ def format_created_at(dt):
     return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 # Function to scrape tweets based on query
-async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, cookie_files: list) -> AsyncGenerator[Item, None]:
+async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, maximum_items_to_collect: int, cookie_files: list) -> AsyncGenerator[Item, None]:
     current_cookie_index = 0
+    collected_items = 0
 
     def load_cookie():
         nonlocal current_cookie_index
@@ -1027,42 +1028,51 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, coo
 
     load_cookie()
 
-    while True:
-        try:
-            search_results = await client.search_tweet(query=query, product='Latest')
-            logging.info("Search successful.")
-            
-            current_time = datetime.now(timezone.utc)
-            max_oldness_duration = timedelta(seconds=max_oldness_seconds)
-            
-            for tweet in search_results:
-                tweet_age = current_time - tweet.created_at_datetime
-                if tweet_age > max_oldness_duration:
-                    continue
-
-                content = tweet.full_text.strip()
-                if not content or len(content) < min_post_length:  # Check if content is empty or less than min length
-                    continue
+    try:
+        while True:
+            try:
+                search_results = await client.search_tweet(query=query, product='Latest')
+                logging.info("Search successful.")
                 
-                post_author = tweet.user.name if tweet.user.name else '[deleted]'
-                item = Item(
-                    content=Content(content),
-                    author=Author(hashlib.sha1(bytes(post_author, encoding="utf-8")).hexdigest()),
-                    created_at=CreatedAt(format_created_at(tweet.created_at_datetime)),
-                    domain=Domain("twitter.com"),
-                    url=Url(f"https://twitter.com/{tweet.user.screen_name}/status/{tweet.id}"),
-                    external_id=ExternalId(str(tweet.id))
-                )
-                logging.info(f"Yielding item: {item}")
-                yield item
-            break  # Exit the loop if search is successful
-        except twikit.errors.TooManyRequests as e:
-            logging.error(f"Rate limit exceeded: {e}. Loading next cookies and retrying in 10 seconds...")
-            load_cookie()
-            await asyncio.sleep(10)
-        except Exception as e:
-            logging.error(f"An error occurred during tweet search: {e}")
-            break
+                current_time = datetime.now(timezone.utc)
+                max_oldness_duration = timedelta(seconds=max_oldness_seconds)
+                
+                for tweet in search_results:
+                    tweet_age = current_time - tweet.created_at_datetime
+                    if tweet_age > max_oldness_duration:
+                        continue
+
+                    content = tweet.full_text.strip()
+                    if not content or len(content) < min_post_length:  # Check if content is empty or less than min length
+                        continue
+                    
+                    post_author = tweet.user.name if tweet.user.name else '[deleted]'
+                    item = Item(
+                        content=Content(content),
+                        author=Author(hashlib.sha1(bytes(post_author, encoding="utf-8")).hexdigest()),
+                        created_at=CreatedAt(format_created_at(tweet.created_at_datetime)),
+                        domain=Domain("https://x.com"),
+                        url=Url(f"https://x.com/{tweet.user.screen_name}/status/{tweet.id}"),
+                        external_id=ExternalId(str(tweet.id))
+                    )
+                    logging.info(f"Yielding item: {item}")
+                    yield item
+                    collected_items += 1
+                    if collected_items >= maximum_items_to_collect:
+                        return
+                break  # Exit the loop if search is successful
+            except twikit.errors.TooManyRequests as e:
+                logging.error(f"Rate limit exceeded: {e}. Loading next cookies and retrying in 10 seconds...")
+                load_cookie()
+                await asyncio.sleep(10)
+            except Exception as e:
+                logging.error(f"An error occurred during tweet search: {e}")
+                break
+    except GeneratorExit:
+        logging.info("Generator exit requested, closing async generator gracefully.")
+    finally:
+        logging.info("Exiting the scrape function.")
+
 
 
 # Function to query tweets based on parameters
