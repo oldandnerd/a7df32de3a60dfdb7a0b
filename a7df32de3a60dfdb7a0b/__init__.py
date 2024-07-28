@@ -2,11 +2,12 @@ import asyncio
 import logging
 import random
 import hashlib
-import re
+import os
 from datetime import datetime, timezone, timedelta
 from typing import AsyncGenerator
 import httpx
 import twikit
+import re
 from exorde_data import Item, Content, Author, CreatedAt, Url, Domain, ExternalId
 
 # Initialize Twikit client
@@ -967,81 +968,45 @@ SPECIAL_KEYWORDS_LIST = [
     ]
 ############
 
-# Default values for parameters
-DEFAULT_OLDNESS_SECONDS = 120
-DEFAULT_MAXIMUM_ITEMS = 25
-DEFAULT_MIN_POST_LENGTH = 10
-DEFAULT_DEFAULT_KEYWORD_WEIGHT_PICK = 0.5
-
-# SPECIAL MODE
-SPECIAL_KEYWORDS_LIST = []
-
 # Load all cookies and proxies from the ips.txt file
 def load_proxies_and_cookies():
+    cookies_folder = '/cookies'
+    ips_file = os.path.join(cookies_folder, 'ips.txt')
     proxies_and_cookies = []
-    with open('/cookies/ips.txt', 'r') as file:
+    with open(ips_file, 'r') as file:
         for line in file:
-            proxy, cookie = line.strip().split(',')
-            proxies_and_cookies.append((f'socks5://{proxy}', f'/cookies/{cookie}'))
+            ip_port, cookie_file = line.strip().split(',')
+            proxy = f"socks5://{ip_port}"
+            cookie_path = os.path.join(cookies_folder, cookie_file)
+            proxies_and_cookies.append((proxy, cookie_path))
     return proxies_and_cookies
-
-# Function to read parameters
-def read_parameters(parameters):
-    if parameters and isinstance(parameters, dict):
-        max_oldness_seconds = parameters.get("max_oldness_seconds", DEFAULT_OLDNESS_SECONDS)
-        maximum_items_to_collect = parameters.get("maximum_items_to_collect", DEFAULT_MAXIMUM_ITEMS)
-        min_post_length = parameters.get("min_post_length", DEFAULT_MIN_POST_LENGTH)
-        pick_default_keyword_weight = parameters.get("pick_default_keyword_weight", DEFAULT_DEFAULT_KEYWORD_WEIGHT_PICK)
-    else:
-        # Assign default values if parameters is empty or None
-        max_oldness_seconds = DEFAULT_OLDNESS_SECONDS
-        maximum_items_to_collect = DEFAULT_MAXIMUM_ITEMS
-        min_post_length = DEFAULT_MIN_POST_LENGTH
-        pick_default_keyword_weight = DEFAULT_DEFAULT_KEYWORD_WEIGHT_PICK
-
-    return (
-        max_oldness_seconds,
-        maximum_items_to_collect,
-        min_post_length,
-        pick_default_keyword_weight,
-    )
-
-# Function to generate a keyword based on parameters with specified probabilities
-def generate_keyword(parameters, pick_default_keyword_weight):
-    if random.random() < pick_default_keyword_weight:  # Use the specified weight
-        search_keyword = parameters.get("keyword", random.choice(SPECIAL_KEYWORDS_LIST) if SPECIAL_KEYWORDS_LIST else "default_keyword")
-    else:
-        search_keyword = random.choice(SPECIAL_KEYWORDS_LIST) if SPECIAL_KEYWORDS_LIST else "default_keyword"
-    return search_keyword
 
 # Function to format created_at datetime
 def format_created_at(dt):
     return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
-# Function to check if the content is only emojis
-def is_only_emojis(content: str) -> bool:
-    emoji_pattern = re.compile(
-        "["
-        "\U0001F600-\U0001F64F"  # emoticons
-        "\U0001F300-\U0001F5FF"  # symbols & pictographs
-        "\U0001F680-\U0001F6FF"  # transport & map symbols
-        "\U0001F1E0-\U0001F1FF"  # flags (iOS)
-        "\U00002702-\U000027B0"
-        "\U000024C2-\U0001F251"
-        "]+", flags=re.UNICODE)
-    return all(char in emoji_pattern.findall(content) for char in content)
-
-
-# Function to scrape tweets based on query
-async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, maximum_items_to_collect: int, proxies_and_cookies: list) -> AsyncGenerator[Item, None]:
-    collected_items = 0
-
-    while True:
-        proxy, cookie_file = proxies_and_cookies.pop(0)
-        proxies_and_cookies.append((proxy, cookie_file))
+# Function to handle loading proxy and cookie
+class ProxyCookieLoader:
+    def __init__(self, proxies_and_cookies):
+        self.proxies_and_cookies = proxies_and_cookies
+        self.current_index = 0
+        self.total_proxies = len(proxies_and_cookies)
+    
+    def load_next(self):
+        if self.current_index >= self.total_proxies:
+            self.current_index = 0
+        proxy, cookie_file = self.proxies_and_cookies[self.current_index]
         client.load_cookies(cookie_file)
         logging.info(f"Loaded cookies from: {cookie_file} with proxy: {proxy}")
+        self.current_index += 1
+        return proxy, cookie_file
 
+# Function to scrape tweets based on query
+async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, maximum_items_to_collect: int, proxy_cookie_loader: ProxyCookieLoader) -> AsyncGenerator[Item, None]:
+    collected_items = 0
+
+    while collected_items < maximum_items_to_collect:
+        proxy, cookie_file = proxy_cookie_loader.load_next()
         try:
             async with httpx.AsyncClient(proxies=proxy) as session:
                 try:
@@ -1057,8 +1022,8 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                             continue
 
                         content = tweet.full_text.strip()
-                        if not content or len(content) < min_post_length or is_only_emojis(content):  # Check if content is empty, too short, or only emojis
-                            logging.error(f"Tweet has no valid content, is too short, or is only emojis: URL: https://x.com/{tweet.user.screen_name}/status/{tweet.id}, Content: '{content}'")
+                        if not content or len(content) < min_post_length:  # Check if content is empty or less than min length
+                            logging.error(f"No valid content in tweet with URL: https://x.com/{tweet.user.screen_name}/status/{tweet.id}")
                             continue
                         
                         post_author = tweet.user.name if tweet.user.name else '[deleted]'
@@ -1075,8 +1040,9 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                         collected_items += 1
                         if collected_items >= maximum_items_to_collect:
                             return
+                    break  # Exit the loop if search is successful
                 except twikit.errors.TooManyRequests as e:
-                    logging.error(f"Rate limit exceeded: {e}. Loading next cookies and proxy and retrying in 5 seconds...")
+                    logging.error(f"Rate limit exceeded: {e}. Retrying in 5 seconds...")
                     await asyncio.sleep(5)
                 except twikit.errors.BadRequest as e:
                     logging.error(f"Bad request with cookies: {cookie_file}")
@@ -1102,15 +1068,50 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                     logging.error(f"An error occurred with cookies {cookie_file}: {e}")
         except GeneratorExit:
             logging.info("Generator exit requested, closing async generator gracefully.")
-            return
+            raise
         finally:
             logging.info("Exiting the scrape function.")
 
-
 # Function to query tweets based on parameters
-async def query(parameters: dict) -> AsyncGenerator[Item, None]:
+async def query(parameters) -> AsyncGenerator[Item, None]:
     max_oldness_seconds, maximum_items_to_collect, min_post_length, pick_default_keyword_weight = read_parameters(parameters)
     keyword = generate_keyword(parameters, pick_default_keyword_weight)
     proxies_and_cookies = load_proxies_and_cookies()
-    async for item in scrape(keyword, max_oldness_seconds, min_post_length, maximum_items_to_collect, proxies_and_cookies):
+    proxy_cookie_loader = ProxyCookieLoader(proxies_and_cookies)
+    async for item in scrape(keyword, max_oldness_seconds, min_post_length, maximum_items_to_collect, proxy_cookie_loader):
         yield item
+
+# Function to generate a keyword based on parameters with specified probabilities
+def generate_keyword(parameters, pick_default_keyword_weight):
+    if random.random() < pick_default_keyword_weight:  # Use the specified weight
+        search_keyword = parameters.get("keyword", random.choice(SPECIAL_KEYWORDS_LIST))
+    else:
+        search_keyword = random.choice(SPECIAL_KEYWORDS_LIST)
+    return search_keyword
+
+# Default values for parameters
+DEFAULT_OLDNESS_SECONDS = 120
+DEFAULT_MAXIMUM_ITEMS = 25
+DEFAULT_MIN_POST_LENGTH = 10
+DEFAULT_DEFAULT_KEYWORD_WEIGHT_PICK = 0.5
+
+def read_parameters(parameters):
+    if parameters and isinstance(parameters, dict):
+        max_oldness_seconds = parameters.get("max_oldness_seconds", DEFAULT_OLDNESS_SECONDS)
+        maximum_items_to_collect = parameters.get("maximum_items_to_collect", DEFAULT_MAXIMUM_ITEMS)
+        min_post_length = parameters.get("min_post_length", DEFAULT_MIN_POST_LENGTH)
+        pick_default_keyword_weight = parameters.get("pick_default_keyword_weight", DEFAULT_DEFAULT_KEYWORD_WEIGHT_PICK)
+    else:
+        # Assign default values if parameters is empty or None
+        max_oldness_seconds = DEFAULT_OLDNESS_SECONDS
+        maximum_items_to_collect = DEFAULT_MAXIMUM_ITEMS
+        min_post_length = DEFAULT_MIN_POST_LENGTH
+        pick_default_keyword_weight = DEFAULT_DEFAULT_KEYWORD_WEIGHT_PICK
+
+    return (
+        max_oldness_seconds,
+        maximum_items_to_collect,
+        min_post_length,
+        pick_default_keyword_weight,
+    )
+
