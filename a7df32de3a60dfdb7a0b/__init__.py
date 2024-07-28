@@ -1001,13 +1001,13 @@ def read_parameters(parameters):
     )
 
 # Function to generate a keyword based on parameters with specified probabilities
-def generate_keyword(parameters):
-    if random.random() < 0.8:  # 80% probability
+def generate_keyword(parameters, pick_default_keyword_weight):
+    if random.random() < pick_default_keyword_weight:  # Use the specified weight
         search_keyword = parameters.get("keyword", random.choice(SPECIAL_KEYWORDS_LIST))
-    else:  # 20% probability
+    else:
         search_keyword = random.choice(SPECIAL_KEYWORDS_LIST)
-
     return search_keyword
+
 
 # Function to format created_at datetime
 def format_created_at(dt):
@@ -1077,7 +1077,7 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
 # Function to query tweets based on parameters
 async def query(parameters) -> AsyncGenerator[Item, None]:
     max_oldness_seconds, maximum_items_to_collect, min_post_length, pick_default_keyword_weight = read_parameters(parameters)
-    keyword = generate_keyword(parameters)
+    keyword = generate_keyword(parameters, pick_default_keyword_weight)
     cookie_files = load_all_cookies()
     async for item in scrape(keyword, max_oldness_seconds, min_post_length, maximum_items_to_collect, cookie_files):
         yield item
