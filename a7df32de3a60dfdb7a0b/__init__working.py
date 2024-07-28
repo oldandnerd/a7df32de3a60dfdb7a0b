@@ -971,7 +971,6 @@ SPECIAL_KEYWORDS_LIST = [
     "高級"
     ]
 ############
-
 # Function to read parameters
 def read_parameters(parameters):
     if parameters and isinstance(parameters, dict):
@@ -1009,7 +1008,6 @@ def format_created_at(dt):
 # Function to scrape tweets based on query
 async def scrape(query: str, max_oldness_seconds: int, min_post_length: int) -> AsyncGenerator[Item, None]:
     client.load_cookies('/exorde/cookies.json')
-    logging.info(f"Starting scrape with query: {query}")
     try:
         search_results = await client.search_tweet(query=query, product='Latest')
         logging.info("Search successful.")
@@ -1035,7 +1033,6 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int) -> 
                 url=Url(f"https://twitter.com/{tweet.user.screen_name}/status/{tweet.id}"),
                 external_id=ExternalId(str(tweet.id))
             )
-            logging.info(f"Yielding item: {item}")
             yield item
     except twikit.errors.TooManyRequests as e:
         logging.error(f"Rate limit exceeded: {e}. Retrying in 10 seconds...")
