@@ -973,6 +973,7 @@ SPECIAL_KEYWORDS_LIST = [
     ]
 ############
 
+# Load all cookies and proxies from the ips.txt file
 def load_proxies_and_cookies():
     cookies_folder = '/cookies'
     ips_file = os.path.join(cookies_folder, 'ips.txt')
@@ -986,7 +987,6 @@ def load_proxies_and_cookies():
     return proxies_and_cookies
 
 
-# Function to read parameters
 def read_parameters(parameters):
     if parameters and isinstance(parameters, dict):
         max_oldness_seconds = parameters.get("max_oldness_seconds", DEFAULT_OLDNESS_SECONDS)
@@ -1007,6 +1007,7 @@ def read_parameters(parameters):
         pick_default_keyword_weight,
     )
 
+
 # Function to generate a keyword based on parameters with specified probabilities
 def generate_keyword(parameters, pick_default_keyword_weight):
     if random.random() < pick_default_keyword_weight:  # Use the specified weight
@@ -1016,10 +1017,12 @@ def generate_keyword(parameters, pick_default_keyword_weight):
     return search_keyword
 
 
+
 # Function to format created_at datetime
 def format_created_at(dt):
     return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
+# Function to scrape tweets based on query
 async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, maximum_items_to_collect: int, proxies_and_cookies: list) -> AsyncGenerator[Item, None]:
     current_index = 0
     collected_items = 0
@@ -1040,7 +1043,7 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
         try:
             while collected_items < maximum_items_to_collect:
                 try:
-                    search_results = await client.search_tweet(query=query, product='Latest', session=session)
+                    search_results = await client.search_tweet(query=query, product='Latest')
                     logging.info("Search successful.")
                     
                     current_time = datetime.now(timezone.utc)
@@ -1111,6 +1114,7 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
             logging.info("Generator exit requested, closing async generator gracefully.")
         finally:
             logging.info("Exiting the scrape function.")
+
 
 # Function to query tweets based on parameters
 async def query(parameters) -> AsyncGenerator[Item, None]:
