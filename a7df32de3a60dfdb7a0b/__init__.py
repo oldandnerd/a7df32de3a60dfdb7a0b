@@ -1022,7 +1022,6 @@ def generate_keyword(parameters, pick_default_keyword_weight):
 def format_created_at(dt):
     return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
-# Function to scrape tweets based on query
 async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, maximum_items_to_collect: int, proxies_and_cookies: list) -> AsyncGenerator[Item, None]:
     current_index = 0
     collected_items = 0
@@ -1056,6 +1055,7 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
 
                         content = tweet.full_text.strip()
                         if not content or len(content) < min_post_length:  # Check if content is empty or less than min length
+                            logging.error(f"No valid content in tweet with URL: https://x.com/{tweet.user.screen_name}/status/{tweet.id}")
                             continue
                         
                         post_author = tweet.user.name if tweet.user.name else '[deleted]'
@@ -1063,8 +1063,8 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                             content=Content(content),
                             author=Author(hashlib.sha1(bytes(post_author, encoding="utf-8")).hexdigest()),
                             created_at=CreatedAt(format_created_at(tweet.created_at_datetime)),
-                            domain=Domain("https://twitter.com"),
-                            url=Url(f"https://twitter.com/{tweet.user.screen_name}/status/{tweet.id}"),
+                            domain=Domain("https://x.com"),
+                            url=Url(f"https://x.com/{tweet.user.screen_name}/status/{tweet.id}"),
                             external_id=ExternalId(str(tweet.id))
                         )
                         logging.info(f"Yielding item: {item}")
@@ -1076,7 +1076,7 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                 except twikit.errors.TooManyRequests as e:
                     logging.error(f"Rate limit exceeded: {e}. Loading next cookies and proxy and retrying in 10 seconds...")
                     proxy, cookie_file = load_proxy_and_cookie()
-                    await asyncio.sleep(10)
+                    await asyncio.sleep(1)
                 except twikit.errors.BadRequest as e:
                     logging.error(f"Bad request with cookies: {cookie_file}")
                     break
@@ -1114,7 +1114,6 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
             logging.info("Generator exit requested, closing async generator gracefully.")
         finally:
             logging.info("Exiting the scrape function.")
-
 
 # Function to query tweets based on parameters
 async def query(parameters) -> AsyncGenerator[Item, None]:
