@@ -2,6 +2,7 @@ import asyncio
 import logging
 import random
 import hashlib
+from typing import List
 import os
 from datetime import datetime, timezone, timedelta
 from typing import AsyncGenerator
@@ -1069,6 +1070,14 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
         except Exception as e:
             logging.error(f"An error occurred with cookies {cookie_file}: {e}")
 
+
+# Helper function to gather results from async generator
+async def gather_results(coroutine) -> List[Item]:
+    results = []
+    async for item in coroutine:
+        results.append(item)
+    return results
+
 # Function to query tweets based on parameters in parallel
 async def query(parameters) -> AsyncGenerator[Item, None]:
     max_oldness_seconds, maximum_items_to_collect, min_post_length, pick_default_keyword_weight = read_parameters(parameters)
@@ -1076,12 +1085,12 @@ async def query(parameters) -> AsyncGenerator[Item, None]:
     proxies_and_cookies = load_proxies_and_cookies()
     proxy_cookie_loader = ProxyCookieLoader(proxies_and_cookies)
 
-    tasks = [scrape(keyword, max_oldness_seconds, min_post_length, maximum_items_to_collect // len(keywords), proxy_cookie_loader) for keyword in keywords]
+    tasks = [gather_results(scrape(keyword, max_oldness_seconds, min_post_length, maximum_items_to_collect // len(keywords), proxy_cookie_loader)) for keyword in keywords]
     
     results = await asyncio.gather(*tasks)
 
     for result in results:
-        async for item in result:
+        for item in result:
             yield item
 
 # Function to generate multiple keywords based on parameters with specified probabilities
