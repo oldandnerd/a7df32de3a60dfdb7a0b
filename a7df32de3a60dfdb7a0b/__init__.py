@@ -1074,15 +1074,10 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
         logging.info("Exiting the scrape function.")
 
 
-
 # Function to query tweets based on parameters
 async def query(parameters) -> AsyncGenerator[Item, None]:
     max_oldness_seconds, maximum_items_to_collect, min_post_length, pick_default_keyword_weight = read_parameters(parameters)
     keyword = generate_keyword(parameters)
     cookie_files = load_all_cookies()
-    collected_items = 0
-    async for item in scrape(keyword, max_oldness_seconds, min_post_length, cookie_files):
+    async for item in scrape(keyword, max_oldness_seconds, min_post_length, maximum_items_to_collect, cookie_files):
         yield item
-        collected_items += 1
-        if collected_items >= maximum_items_to_collect:
-            break
