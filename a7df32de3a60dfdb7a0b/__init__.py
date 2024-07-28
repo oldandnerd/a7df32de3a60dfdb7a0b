@@ -1078,8 +1078,11 @@ async def query(parameters) -> AsyncGenerator[Item, None]:
 
     tasks = [scrape(keyword, max_oldness_seconds, min_post_length, maximum_items_to_collect // len(keywords), proxy_cookie_loader) for keyword in keywords]
     
-    for task in asyncio.as_completed(tasks):
-        async for item in await task:
+    # Use asyncio.gather to await all tasks concurrently
+    results = await asyncio.gather(*tasks)
+
+    for result in results:
+        async for item in result:
             yield item
 
 # Function to generate multiple keywords based on parameters with specified probabilities
