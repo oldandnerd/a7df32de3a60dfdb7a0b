@@ -967,7 +967,6 @@ SPECIAL_KEYWORDS_LIST = [
     "高級"
     ]
 ############
-
 # Load all cookies and proxies from the ips.txt file
 def load_proxies_and_cookies():
     cookies_folder = '/cookies'
@@ -989,17 +988,20 @@ def format_created_at(dt):
 class ProxyCookieLoader:
     def __init__(self, proxies_and_cookies):
         self.proxies_and_cookies = proxies_and_cookies
-        self.current_index = 0
+        self.used_indices = set()
         self.total_proxies = len(proxies_and_cookies)
     
     def load_next(self):
-        if self.current_index >= self.total_proxies:
-            self.current_index = 0
-        proxy, cookie_file = self.proxies_and_cookies[self.current_index]
-        client.load_cookies(cookie_file)
-        logging.info(f"Loaded cookies from: {cookie_file} with proxy: {proxy}")
-        self.current_index += 1
-        return proxy, cookie_file
+        while len(self.used_indices) < self.total_proxies:
+            index = random.randint(0, self.total_proxies - 1)
+            if index not in self.used_indices:
+                self.used_indices.add(index)
+                proxy, cookie_file = self.proxies_and_cookies[index]
+                client.load_cookies(cookie_file)
+                logging.info(f"Loaded cookies from: {cookie_file} with proxy: {proxy}")
+                return proxy, cookie_file
+        self.used_indices.clear()  # Reset the used indices after all proxies have been used once
+        return self.load_next()  # Retry after resetting
 
 # Function to scrape tweets based on query
 async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, maximum_items_to_collect: int, proxy_cookie_loader: ProxyCookieLoader) -> AsyncGenerator[Item, None]:
