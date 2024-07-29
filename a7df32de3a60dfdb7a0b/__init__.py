@@ -7,6 +7,7 @@ import os
 from datetime import datetime, timezone, timedelta
 import re
 import twikit
+
 from exorde_data import Item, Content, Author, CreatedAt, Url, Domain, ExternalId
 
 # Initialize Twikit client
@@ -986,7 +987,9 @@ def format_created_at(dt):
     return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
-import asyncio
+
+
+
 
 class ProxyCookieLoader:
     def __init__(self, proxies_and_cookies):
@@ -996,33 +999,42 @@ class ProxyCookieLoader:
         self.proxy_last_used = {proxy: datetime.min for proxy, _ in proxies_and_cookies}
         self.max_requests_per_proxy = 50
         self.proxy_cooldown_period = timedelta(minutes=15)
-        self.request_interval = timedelta(seconds=19)  # Interval between requests for each proxy
+        self.request_interval = timedelta(seconds=18)  # Interval between requests for each proxy
 
     async def load_next(self):
         while True:
-            index = random.randint(0, self.total_proxies - 1)
-            proxy, cookie_file = self.proxies_and_cookies[index]
-            now = datetime.now()
+            available_proxies = [index for index, (proxy, _) in enumerate(self.proxies_and_cookies)
+                                 if self.proxy_usage_count[proxy] < self.max_requests_per_proxy and
+                                 (datetime.now() - self.proxy_last_used[proxy]) >= self.request_interval]
 
-            last_used = self.proxy_last_used[proxy]
-            if self.proxy_usage_count[proxy] < self.max_requests_per_proxy and (now - last_used) >= self.request_interval:
+            if available_proxies:
+                index = random.choice(available_proxies)
+                proxy, cookie_file = self.proxies_and_cookies[index]
+                now = datetime.now()
+
                 self.proxy_usage_count[proxy] += 1
                 self.proxy_last_used[proxy] = now
                 client.load_cookies(cookie_file)
                 logging.info(f"Loaded cookies from: {cookie_file} with proxy: {proxy}")
                 await asyncio.sleep(self.request_interval.total_seconds())  # Ensure delay between requests
                 return proxy, cookie_file
-
-            if self.proxy_usage_count[proxy] >= self.max_requests_per_proxy:
-                logging.info(f"Proxy {proxy} reached max usage. Cooling down.")
-                await asyncio.sleep(self.proxy_cooldown_period.total_seconds())
-                self.proxy_usage_count[proxy] = 0  # Reset the usage count after cooldown
+            else:
+                next_available_time = min(self.proxy_last_used.values()) + self.request_interval
+                wait_time = (next_available_time - datetime.now()).total_seconds()
+                if wait_time > 0:
+                    logging.info(f"No proxies available. Next proxy available in {wait_time:.2f} seconds.")
+                    await asyncio.sleep(wait_time)
+                else:
+                    # Reset usage count if all proxies are cooled down
+                    self.reset_usage()
 
     def reset_usage(self):
         now = datetime.now()
         for proxy, last_used in self.proxy_last_used.items():
             if (now - last_used) >= self.proxy_cooldown_period:
                 self.proxy_usage_count[proxy] = 0
+        self.used_indices.clear()
+
 
 
 
@@ -1123,7 +1135,7 @@ async def gather_results(coroutine) -> List[Item]:
     return results
 
 async def query(parameters) -> AsyncGenerator[Item, None]:
-    max_oldness_seconds, maximum_items_to_collect, min_post_length, pick_default_keyword_weight = read_parameters(parameters)
+    max_oldness_seconds, min_post_length, pick_default_keyword_weight = read_parameters(parameters)
     proxies_and_cookies = load_proxies_and_cookies()
     proxy_cookie_loader = ProxyCookieLoader(proxies_and_cookies)
     keyword_count = min(4, len(proxies_and_cookies))  # Use the number of proxies as the limit
@@ -1154,6 +1166,8 @@ def generate_keywords(parameters, pick_default_keyword_weight, proxies_and_cooki
 
 
 
+
+
 # Default values for parameters
 DEFAULT_OLDNESS_SECONDS = 120
 DEFAULT_MAXIMUM_ITEMS = 25
@@ -1163,19 +1177,12 @@ DEFAULT_DEFAULT_KEYWORD_WEIGHT_PICK = 0.5
 def read_parameters(parameters):
     if parameters and isinstance(parameters, dict):
         max_oldness_seconds = parameters.get("max_oldness_seconds", DEFAULT_OLDNESS_SECONDS)
-        maximum_items_to_collect = parameters.get("maximum_items_to_collect", DEFAULT_MAXIMUM_ITEMS)
         min_post_length = parameters.get("min_post_length", DEFAULT_MIN_POST_LENGTH)
         pick_default_keyword_weight = parameters.get("pick_default_keyword_weight", DEFAULT_DEFAULT_KEYWORD_WEIGHT_PICK)
     else:
         # Assign default values if parameters is empty or None
         max_oldness_seconds = DEFAULT_OLDNESS_SECONDS
-        maximum_items_to_collect = DEFAULT_MAXIMUM_ITEMS
         min_post_length = DEFAULT_MIN_POST_LENGTH
         pick_default_keyword_weight = DEFAULT_DEFAULT_KEYWORD_WEIGHT_PICK
 
-    return (
-        max_oldness_seconds,
-        maximum_items_to_collect,
-        min_post_length,
-        pick_default_keyword_weight,
-    )
+    return max_oldness_seconds, min_post_length, pick_default_keyword_weight
