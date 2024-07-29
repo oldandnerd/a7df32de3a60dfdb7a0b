@@ -1045,12 +1045,13 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
     current_time = datetime.now(timezone.utc)
     max_oldness_duration = timedelta(seconds=max_oldness_seconds)
 
-    # Yield items from the buffer first
-    while buffer and collected_items < maximum_items_to_collect:
-        yield buffer.pop(0)
-        collected_items += 1
-
     while collected_items < maximum_items_to_collect:
+        # Check the buffer first
+        if buffer:
+            yield buffer.pop(0)
+            collected_items += 1
+            continue
+
         proxy, cookie_file = await proxy_cookie_loader.load_next()
         try:
             search_results = await client.search_tweet(query=query, product='Latest', count=100)
@@ -1076,8 +1077,8 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                     url=Url(f"https://x.com/{tweet.user.screen_name}/status/{tweet.id}"),
                     external_id=ExternalId(str(tweet.id))
                 )
-                logging.info(f"Yielding item: {item}")
                 if collected_items < maximum_items_to_collect:
+                    logging.info(f"Yielding item: {item}")
                     yield item
                     collected_items += 1
                 else:
@@ -1104,8 +1105,8 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                             url=Url(f"https://x.com/{reply.user.screen_name}/status/{reply.id}"),
                             external_id=ExternalId(str(reply.id))
                         )
-                        logging.info(f"Yielding reply item: {reply_item}")
                         if collected_items < maximum_items_to_collect:
+                            logging.info(f"Yielding reply item: {reply_item}")
                             yield reply_item
                             collected_items += 1
                         else:
