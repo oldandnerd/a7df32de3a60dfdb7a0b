@@ -986,8 +986,6 @@ def format_created_at(dt):
     return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
-import asyncio
-
 class ProxyCookieLoader:
     def __init__(self, proxies_and_cookies):
         self.proxies_and_cookies = proxies_and_cookies
@@ -996,7 +994,7 @@ class ProxyCookieLoader:
         self.proxy_last_used = {proxy: datetime.min for proxy, _ in proxies_and_cookies}
         self.max_requests_per_proxy = 50
         self.proxy_cooldown_period = timedelta(minutes=15)
-        self.request_interval = timedelta(seconds=19)  # Interval between requests for each proxy
+        self.request_interval = timedelta(seconds=18)  # Interval between requests for each proxy
 
     async def load_next(self):
         while True:
@@ -1027,12 +1025,12 @@ class ProxyCookieLoader:
 
 
 
-
-async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, proxy_cookie_loader: ProxyCookieLoader) -> AsyncGenerator[Item, None]:
+async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, maximum_items_to_collect: int, proxy_cookie_loader: ProxyCookieLoader) -> AsyncGenerator[Item, None]:
+    collected_items = 0
     current_time = datetime.now(timezone.utc)
     max_oldness_duration = timedelta(seconds=max_oldness_seconds)
 
-    while True:
+    while collected_items < maximum_items_to_collect:
         proxy, cookie_file = await proxy_cookie_loader.load_next()
         try:
             search_results = await client.search_tweet(query=query, product='Latest', count=100)
@@ -1060,6 +1058,9 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, pro
                 )
                 logging.info(f"Yielding item: {item}")
                 yield item
+                collected_items += 1
+                if collected_items >= maximum_items_to_collect:
+                    return
 
                 # Process replies if available
                 if hasattr(tweet, 'replies') and tweet.replies:
@@ -1084,8 +1085,11 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, pro
                         )
                         logging.info(f"Yielding reply item: {reply_item}")
                         yield reply_item
-
+                        collected_items += 1
+                        if collected_items >= maximum_items_to_collect:
+                            return
             await asyncio.sleep(1)  # Ensure some delay between requests
+            break  # Exit the loop if search is successful
         except twikit.errors.TooManyRequests as e:
             logging.error(f"Rate limit exceeded: {e}. Retrying in 5 seconds...")
             await asyncio.sleep(5)
@@ -1130,14 +1134,13 @@ async def query(parameters) -> AsyncGenerator[Item, None]:
 
     keywords = generate_keywords(parameters, pick_default_keyword_weight, proxies_and_cookies, count=keyword_count)
 
-    tasks = [gather_results(scrape(keyword, max_oldness_seconds, min_post_length, proxy_cookie_loader)) for keyword in keywords]
+    tasks = [gather_results(scrape(keyword, max_oldness_seconds, min_post_length, maximum_items_to_collect // len(keywords), proxy_cookie_loader)) for keyword in keywords]
     
     results = await asyncio.gather(*tasks)
 
     for result in results:
         for item in result:
             yield item
-
 
 
 
