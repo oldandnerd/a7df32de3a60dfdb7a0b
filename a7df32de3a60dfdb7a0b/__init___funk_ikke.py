@@ -7,6 +7,7 @@ import os
 from datetime import datetime, timezone, timedelta
 import re
 import twikit
+
 from exorde_data import Item, Content, Author, CreatedAt, Url, Domain, ExternalId
 
 # Initialize Twikit client
@@ -986,6 +987,10 @@ def format_created_at(dt):
     return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
+
+
+
+
 class ProxyCookieLoader:
     def __init__(self, proxies_and_cookies):
         self.proxies_and_cookies = proxies_and_cookies
@@ -998,29 +1003,36 @@ class ProxyCookieLoader:
 
     async def load_next(self):
         while True:
-            index = random.randint(0, self.total_proxies - 1)
-            proxy, cookie_file = self.proxies_and_cookies[index]
             now = datetime.now()
+            available_proxies = [
+                (index, proxy, cookie_file) for index, (proxy, cookie_file) in enumerate(self.proxies_and_cookies)
+                if self.proxy_usage_count[proxy] < self.max_requests_per_proxy and 
+                (now - self.proxy_last_used[proxy]) >= self.request_interval
+            ]
 
-            last_used = self.proxy_last_used[proxy]
-            if self.proxy_usage_count[proxy] < self.max_requests_per_proxy and (now - last_used) >= self.request_interval:
+            if available_proxies:
+                index, proxy, cookie_file = random.choice(available_proxies)
                 self.proxy_usage_count[proxy] += 1
                 self.proxy_last_used[proxy] = now
                 client.load_cookies(cookie_file)
                 logging.info(f"Loaded cookies from: {cookie_file} with proxy: {proxy}")
-                await asyncio.sleep(self.request_interval.total_seconds())  # Ensure delay between requests
                 return proxy, cookie_file
-
-            if self.proxy_usage_count[proxy] >= self.max_requests_per_proxy:
-                logging.info(f"Proxy {proxy} reached max usage. Cooling down.")
-                await asyncio.sleep(self.proxy_cooldown_period.total_seconds())
-                self.proxy_usage_count[proxy] = 0  # Reset the usage count after cooldown
+            else:
+                next_available_time = min(self.proxy_last_used.values()) + self.request_interval
+                wait_time = max((next_available_time - now).total_seconds(), 0)
+                logging.info(f"No proxies available. Next proxy available in {wait_time:.2f} seconds.")
+                await asyncio.sleep(wait_time)
 
     def reset_usage(self):
         now = datetime.now()
         for proxy, last_used in self.proxy_last_used.items():
             if (now - last_used) >= self.proxy_cooldown_period:
                 self.proxy_usage_count[proxy] = 0
+        self.proxy_last_used = {proxy: datetime.min for proxy, _ in self.proxies_and_cookies}  # Reset last used times
+        logging.info("All proxies have been reset.")
+
+
+
 
 
 
@@ -1088,8 +1100,8 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                         collected_items += 1
                         if collected_items >= maximum_items_to_collect:
                             return
+
             await asyncio.sleep(1)  # Ensure some delay between requests
-            break  # Exit the loop if search is successful
         except twikit.errors.TooManyRequests as e:
             logging.error(f"Rate limit exceeded: {e}. Retrying in 5 seconds...")
             await asyncio.sleep(5)
@@ -1176,9 +1188,4 @@ def read_parameters(parameters):
         min_post_length = DEFAULT_MIN_POST_LENGTH
         pick_default_keyword_weight = DEFAULT_DEFAULT_KEYWORD_WEIGHT_PICK
 
-    return (
-        max_oldness_seconds,
-        maximum_items_to_collect,
-        min_post_length,
-        pick_default_keyword_weight,
-    )
+    return max_oldness_seconds, maximum_items_to_collect, min_post_length, pick_default_keyword_weight
