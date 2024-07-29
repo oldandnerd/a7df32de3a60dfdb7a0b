@@ -985,16 +985,16 @@ def load_proxies_and_cookies():
 def format_created_at(dt):
     return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
+
 class ProxyCookieLoader:
     def __init__(self, proxies_and_cookies):
         self.proxies_and_cookies = proxies_and_cookies
-        self.used_indices = set()
         self.total_proxies = len(proxies_and_cookies)
         self.proxy_usage_count = {proxy: 0 for proxy, _ in proxies_and_cookies}
         self.proxy_last_used = {proxy: datetime.min for proxy, _ in proxies_and_cookies}
         self.max_requests_per_proxy = 50
         self.proxy_cooldown_period = timedelta(minutes=15)
-        self.request_interval = timedelta(seconds=20)  # Approximate interval between requests for each proxy
+        self.request_interval = timedelta(seconds=18)  # Interval between requests for each proxy
 
     async def load_next(self):
         while True:
@@ -1002,25 +1002,25 @@ class ProxyCookieLoader:
             proxy, cookie_file = self.proxies_and_cookies[index]
             now = datetime.now()
 
-            if index not in self.used_indices:
-                last_used = self.proxy_last_used[proxy]
-                if self.proxy_usage_count[proxy] < self.max_requests_per_proxy or \
-                        (now - last_used) >= self.proxy_cooldown_period:
-                    if (now - last_used) >= self.request_interval:
-                        self.used_indices.add(index)
-                        self.proxy_usage_count[proxy] += 1
-                        self.proxy_last_used[proxy] = now
-                        client.load_cookies(cookie_file)
-                        logging.info(f"Loaded cookies from: {cookie_file} with proxy: {proxy}")
-                        return proxy, cookie_file
-            await asyncio.sleep(1)  # Short sleep to avoid tight loop
+            last_used = self.proxy_last_used[proxy]
+            if self.proxy_usage_count[proxy] < self.max_requests_per_proxy and (now - last_used) >= self.request_interval:
+                self.proxy_usage_count[proxy] += 1
+                self.proxy_last_used[proxy] = now
+                client.load_cookies(cookie_file)
+                logging.info(f"Loaded cookies from: {cookie_file} with proxy: {proxy}")
+                await asyncio.sleep(self.request_interval.total_seconds())  # Ensure delay between requests
+                return proxy, cookie_file
+
+            if self.proxy_usage_count[proxy] >= self.max_requests_per_proxy:
+                logging.info(f"Proxy {proxy} reached max usage. Cooling down.")
+                await asyncio.sleep(self.proxy_cooldown_period.total_seconds())
+                self.proxy_usage_count[proxy] = 0  # Reset the usage count after cooldown
 
     def reset_usage(self):
         now = datetime.now()
         for proxy, last_used in self.proxy_last_used.items():
             if (now - last_used) >= self.proxy_cooldown_period:
                 self.proxy_usage_count[proxy] = 0
-        self.used_indices.clear()
 
 
 
@@ -1115,6 +1115,7 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
             logging.error(f"User not found with cookies: {cookie_file}")
         except Exception as e:
             logging.error(f"An error occurred with cookies {cookie_file}: {e}")
+
 
 
 
