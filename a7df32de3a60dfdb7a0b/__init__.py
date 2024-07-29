@@ -1140,14 +1140,12 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
         except Exception as e:
             logging.error(f"An error occurred with cookies {cookie_file}: {e}")
 
-
-
-# Helper function to gather results from async generator
 async def gather_results(coroutine) -> List[Item]:
     results = []
     async for item in coroutine:
         results.append(item)
     return results
+
 
 async def query(parameters) -> AsyncGenerator[Item, None]:
     max_oldness_seconds, maximum_items_to_collect, min_post_length, pick_default_keyword_weight = read_parameters(parameters)
@@ -1175,17 +1173,17 @@ def generate_keywords(parameters, pick_default_keyword_weight, proxies_and_cooki
     actual_count = min(count, len(proxies_and_cookies))  # Ensure we don't exceed available proxies
     for _ in range(actual_count):
         search_keyword = None
-        if random.random() < pick_default_keyword_weight:  # Use the specified weight
-            search_keyword = parameters.get("keyword", random.choice(SPECIAL_KEYWORDS_LIST))
-        else:
-            while not search_keyword or search_keyword in keyword_history:
+        # Ensure we pick a keyword not recently used
+        while not search_keyword or search_keyword in keyword_history:
+            if random.random() < pick_default_keyword_weight:  # Use the specified weight
+                search_keyword = parameters.get("keyword", random.choice(SPECIAL_KEYWORDS_LIST))
+            else:
                 search_keyword = random.choice(SPECIAL_KEYWORDS_LIST)
-        
+
         keyword_history.append(search_keyword)
         logging.info(f"Selected keyword: {search_keyword}")
         keywords.append(search_keyword)
     return keywords
-
 
 
 
