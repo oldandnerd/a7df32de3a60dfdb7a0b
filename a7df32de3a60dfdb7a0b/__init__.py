@@ -2,10 +2,10 @@ import asyncio
 import logging
 import random
 import hashlib
-import os
-import re
-from datetime import datetime, timezone, timedelta
 from typing import List, AsyncGenerator
+import os
+from datetime import datetime, timezone, timedelta
+import re
 import twikit
 from exorde_data import Item, Content, Author, CreatedAt, Url, Domain, ExternalId
 
@@ -14,7 +14,8 @@ client = twikit.Client(language='en-US')
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
-logging.getLogger('httpx').setLevel(logging.WARNING)  # Suppress httpx info logs
+logging.getLogger('httpx').setLevel(logging.WARNING)  # Set httpx logging level to WARNING to suppress info logs
+
 
 ##### SPECIAL MODE
 # TOP 222
@@ -966,6 +967,7 @@ SPECIAL_KEYWORDS_LIST = [
     ]
 ############
 
+
 # Load all cookies and proxies from the ips.txt file
 def load_proxies_and_cookies():
     cookies_folder = '/cookies'
@@ -987,22 +989,30 @@ def format_created_at(dt):
 class ProxyCookieLoader:
     def __init__(self, proxies_and_cookies):
         self.proxies_and_cookies = proxies_and_cookies
-        self.rate_limits = {i: 50 for i in range(len(proxies_and_cookies))}
-        self.last_used_time = {i: None for i in range(len(proxies_and_cookies))}
+        self.used_indices = set()
         self.total_proxies = len(proxies_and_cookies)
+        self.proxy_usage_count = {proxy: 0 for proxy, _ in proxies_and_cookies}
+        self.proxy_last_used = {proxy: datetime.min for proxy, _ in proxies_and_cookies}
+        self.max_requests_per_proxy = 45
+        self.proxy_cooldown_period = timedelta(minutes=15)
 
-    async def load_next(self):
-        while True:
-            for index in range(self.total_proxies):
-                if self.rate_limits[index] > 0:
-                    proxy, cookie_file = self.proxies_and_cookies[index]
+    def load_next(self):
+        while len(self.used_indices) < self.total_proxies:
+            index = random.randint(0, self.total_proxies - 1)
+            proxy, cookie_file = self.proxies_and_cookies[index]
+            now = datetime.now()
+
+            if index not in self.used_indices:
+                if self.proxy_usage_count[proxy] < self.max_requests_per_proxy or \
+                        (now - self.proxy_last_used[proxy]) >= self.proxy_cooldown_period:
+                    self.used_indices.add(index)
+                    self.proxy_usage_count[proxy] += 1
+                    self.proxy_last_used[proxy] = now
                     client.load_cookies(cookie_file)
                     logging.info(f"Loaded cookies from: {cookie_file} with proxy: {proxy}")
-                    self.rate_limits[index] -= 1
-                    self.last_used_time[index] = datetime.now()
-                    return proxy, cookie_file, index
-            await asyncio.sleep(15 * 60 + 5)  # Sleep for 15 minutes + 5 seconds buffer
-            self.rate_limits = {i: 50 for i in range(self.total_proxies)}  # Reset rate limits
+                    return proxy, cookie_file
+        self.used_indices.clear()  # Reset the used indices after all proxies have been used once
+        return self.load_next()  # Retry after resetting
 
 # Function to scrape tweets based on query
 async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, maximum_items_to_collect: int, proxy_cookie_loader: ProxyCookieLoader) -> AsyncGenerator[Item, None]:
@@ -1011,9 +1021,9 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
     max_oldness_duration = timedelta(seconds=max_oldness_seconds)
 
     while collected_items < maximum_items_to_collect:
-        proxy, cookie_file, index = await proxy_cookie_loader.load_next()
+        proxy, cookie_file = proxy_cookie_loader.load_next()
         try:
-            search_results = await client.search_tweet(query=query, product='Latest')
+            search_results = await client.search_tweet(query=query, product='Latest', count=100)
             logging.info("Search successful.")
 
             for tweet in search_results:
@@ -1023,25 +1033,52 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
 
                 content = tweet.text.strip()
                 # Skip tweets with no text content or only media content
-                if not content or len(content) < min_post_length or re.match(r"^(?:pic\\.twitter\\.com|https?://t\\.co/)\b", content):
+                if not content or len(content) < min_post_length or re.match(r"^(?:pic\.twitter\.com|https?://t\.co/)\b", content):
                     logging.debug(f"Skipped tweet with URL: https://x.com/{tweet.user.screen_name}/status/{tweet.id}")
                     continue
 
                 post_author = tweet.user.name if tweet.user.name else '[deleted]'
-                tweet_id = str(tweet.id)
                 item = Item(
                     content=Content(content),
                     author=Author(hashlib.sha1(bytes(post_author, encoding="utf-8")).hexdigest()),
                     created_at=CreatedAt(format_created_at(tweet.created_at_datetime)),
                     domain=Domain("x.com"),
-                    url=Url(f"https://x.com/{tweet.user.screen_name}/status/{tweet_id}"),
-                    external_id=ExternalId(tweet_id)
+                    url=Url(f"https://x.com/{tweet.user.screen_name}/status/{tweet.id}"),
+                    external_id=ExternalId(str(tweet.id))
                 )
                 logging.info(f"Yielding item: {item}")
                 yield item
                 collected_items += 1
                 if collected_items >= maximum_items_to_collect:
                     return
+
+                # Process replies if available
+                if hasattr(tweet, 'replies') and tweet.replies:
+                    for reply in tweet.replies:
+                        reply_age = current_time - reply.created_at_datetime
+                        if reply_age > max_oldness_duration:
+                            continue
+
+                        reply_content = reply.text.strip()
+                        if not reply_content or len(reply_content) < min_post_length or re.match(r"^(?:pic\.twitter\.com|https?://t\.co/)\b", reply_content):
+                            logging.debug(f"Skipped reply with URL: https://x.com/{reply.user.screen_name}/status/{reply.id}")
+                            continue
+
+                        reply_author = reply.user.name if reply.user.name else '[deleted]'
+                        reply_item = Item(
+                            content=Content(reply_content),
+                            author=Author(hashlib.sha1(bytes(reply_author, encoding="utf-8")).hexdigest()),
+                            created_at=CreatedAt(format_created_at(reply.created_at_datetime)),
+                            domain=Domain("x.com"),
+                            url=Url(f"https://x.com/{reply.user.screen_name}/status/{reply.id}"),
+                            external_id=ExternalId(str(reply.id))
+                        )
+                        logging.info(f"Yielding reply item: {reply_item}")
+                        yield reply_item
+                        collected_items += 1
+                        if collected_items >= maximum_items_to_collect:
+                            return
+            break  # Exit the loop if search is successful
         except twikit.errors.TooManyRequests as e:
             logging.error(f"Rate limit exceeded: {e}. Retrying in 5 seconds...")
             await asyncio.sleep(5)
@@ -1103,7 +1140,7 @@ def generate_keywords(parameters, pick_default_keyword_weight, count=4):
 
 # Default values for parameters
 DEFAULT_OLDNESS_SECONDS = 120
-DEFAULT_MAXIMUM_ITEMS = 100
+DEFAULT_MAXIMUM_ITEMS = 25
 DEFAULT_MIN_POST_LENGTH = 10
 DEFAULT_DEFAULT_KEYWORD_WEIGHT_PICK = 0.5
 
