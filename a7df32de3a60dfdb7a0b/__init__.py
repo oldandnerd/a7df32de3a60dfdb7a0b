@@ -991,7 +991,6 @@ def format_created_at(dt):
 
 
 
-
 class ProxyCookieLoader:
     def __init__(self, proxies_and_cookies):
         self.proxies_and_cookies = proxies_and_cookies
@@ -1004,15 +1003,15 @@ class ProxyCookieLoader:
 
     async def load_next(self):
         while True:
-            available_proxies = [index for index, (proxy, _) in enumerate(self.proxies_and_cookies)
-                                 if self.proxy_usage_count[proxy] < self.max_requests_per_proxy and
-                                 (datetime.now() - self.proxy_last_used[proxy]) >= self.request_interval]
+            now = datetime.now()
+            available_proxies = [
+                (index, proxy, cookie_file) for index, (proxy, cookie_file) in enumerate(self.proxies_and_cookies)
+                if self.proxy_usage_count[proxy] < self.max_requests_per_proxy and 
+                (now - self.proxy_last_used[proxy]) >= self.request_interval
+            ]
 
             if available_proxies:
-                index = random.choice(available_proxies)
-                proxy, cookie_file = self.proxies_and_cookies[index]
-                now = datetime.now()
-
+                index, proxy, cookie_file = random.choice(available_proxies)
                 self.proxy_usage_count[proxy] += 1
                 self.proxy_last_used[proxy] = now
                 client.load_cookies(cookie_file)
@@ -1021,7 +1020,7 @@ class ProxyCookieLoader:
                 return proxy, cookie_file
             else:
                 next_available_time = min(self.proxy_last_used.values()) + self.request_interval
-                wait_time = (next_available_time - datetime.now()).total_seconds()
+                wait_time = (next_available_time - now).total_seconds()
                 if wait_time > 0:
                     logging.info(f"No proxies available. Next proxy available in {wait_time:.2f} seconds.")
                     await asyncio.sleep(wait_time)
@@ -1034,6 +1033,9 @@ class ProxyCookieLoader:
         for proxy, last_used in self.proxy_last_used.items():
             if (now - last_used) >= self.proxy_cooldown_period:
                 self.proxy_usage_count[proxy] = 0
+        self.proxy_last_used = {proxy: datetime.min for proxy, _ in self.proxies_and_cookies}  # Reset last used times
+        logging.info("All proxies have been reset.")
+
 
 
 
@@ -1160,7 +1162,6 @@ async def query(parameters) -> AsyncGenerator[Item, None]:
 
 
 
-
 def generate_keywords(parameters, pick_default_keyword_weight, proxies_and_cookies, count=4):
     keywords = []
     actual_count = min(count, len(proxies_and_cookies))  # Ensure we don't exceed available proxies
@@ -1171,7 +1172,6 @@ def generate_keywords(parameters, pick_default_keyword_weight, proxies_and_cooki
             search_keyword = random.choice(SPECIAL_KEYWORDS_LIST)
         keywords.append(search_keyword)
     return keywords
-
 
 
 
