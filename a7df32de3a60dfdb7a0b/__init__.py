@@ -1010,7 +1010,7 @@ class ProxyCookieLoader:
             available_proxies = [
                 (index, proxy, cookie_file) for index, (proxy, cookie_file) in enumerate(self.proxies_and_cookies)
                 if self.proxy_usage_count[proxy] < self.max_requests_per_proxy and 
-                (now - self.proxy_last_used[proxy]) >= self.default_cooldown_period
+                (now - self.proxy_last_used[proxy]) >= self.proxy_last_used[proxy] - now
             ]
 
             if available_proxies:
@@ -1038,6 +1038,7 @@ class ProxyCookieLoader:
             if (now - last_used) >= self.default_cooldown_period:
                 self.proxy_usage_count[proxy] = 0
         logging.info("All proxies have been reset.")
+
 
 
 
@@ -1147,6 +1148,7 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                 logging.error(f"An error occurred with cookies {cookie_file}: {e}")
     except GeneratorExit:
         logging.info("GeneratorExit: Cleaning up the scrape generator.")
+
 
 
 
