@@ -4,9 +4,9 @@ import random
 import hashlib
 import os
 import re
-import twikit
 from datetime import datetime, timezone, timedelta
 from typing import List, AsyncGenerator
+import twikit
 from exorde_data import Item, Content, Author, CreatedAt, Url, Domain, ExternalId
 
 # Initialize Twikit client
@@ -14,7 +14,6 @@ client = twikit.Client(language='en-US')
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
-
 
 
 ##### SPECIAL MODE
@@ -967,6 +966,7 @@ SPECIAL_KEYWORDS_LIST = [
     ]
 ############
 
+
 # Load all cookies and proxies from the ips.txt file
 def load_proxies_and_cookies():
     cookies_folder = '/cookies'
@@ -1000,6 +1000,7 @@ class ProxyCookieLoader:
                     client.load_cookies(cookie_file)
                     logging.info(f"Loaded cookies from: {cookie_file} with proxy: {proxy}")
                     self.rate_limits[index] -= 1
+                    self.last_used_time[index] = datetime.now()
                     return proxy, cookie_file, index
             await asyncio.sleep(15 * 60 + 5)  # Sleep for 15 minutes + 5 seconds buffer
             self.rate_limits = {i: 50 for i in range(self.total_proxies)}  # Reset rate limits
@@ -1009,9 +1010,8 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
     collected_items = 0
     current_time = datetime.now(timezone.utc)
     max_oldness_duration = timedelta(seconds=max_oldness_seconds)
-    total_collected_items = 0
 
-    while total_collected_items < maximum_items_to_collect:
+    while collected_items < maximum_items_to_collect:
         proxy, cookie_file, index = await proxy_cookie_loader.load_next()
         try:
             search_results = await client.search_tweet(query=query, product='Latest')
@@ -1040,8 +1040,8 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                 )
                 logging.info(f"Yielding item: {item}")
                 yield item
-                total_collected_items += 1
-                if total_collected_items >= maximum_items_to_collect:
+                collected_items += 1
+                if collected_items >= maximum_items_to_collect:
                     return
         except twikit.errors.TooManyRequests as e:
             logging.error(f"Rate limit exceeded: {e}. Retrying in 5 seconds...")
