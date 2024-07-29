@@ -1000,7 +1000,7 @@ class ProxyCookieLoader:
         self.proxy_last_used = {proxy: datetime.min for proxy, _ in proxies_and_cookies}
         self.max_requests_per_proxy = 50
         self.proxy_cooldown_period = timedelta(minutes=15)
-        self.request_interval = timedelta(seconds=18)  # Interval between requests for each proxy
+        self.request_interval = timedelta(seconds=20)  # Interval between requests for each proxy
 
     async def load_next(self):
         while True:
@@ -1036,7 +1036,6 @@ class ProxyCookieLoader:
 
 
 
-
 buffer = []  # Initialize a global buffer to store extra items
 
 async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, maximum_items_to_collect: int, proxy_cookie_loader: ProxyCookieLoader) -> AsyncGenerator[Item, None]:
@@ -1048,12 +1047,16 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
     while collected_items < maximum_items_to_collect:
         # Check the buffer first
         if buffer:
-            yield buffer.pop(0)
+            item = buffer.pop(0)
+            item_type = 'reply' if 'in_reply_to_status_id' in item.url else 'tweet'
+            logging.info(f"Yielding item from buffer: {item_type} - Content: {item.content}")
+            yield item
             collected_items += 1
             continue
 
         proxy, cookie_file = await proxy_cookie_loader.load_next()
         try:
+            logging.info(f"Searching with keyword: {query}")
             search_results = await client.search_tweet(query=query, product='Latest', count=100)
             logging.info("Search successful.")
 
@@ -1078,7 +1081,7 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                     external_id=ExternalId(str(tweet.id))
                 )
                 if collected_items < maximum_items_to_collect:
-                    logging.info(f"Yielding item: {item}")
+                    logging.info(f"Yielding item: tweet - Content: {item.content}")
                     yield item
                     collected_items += 1
                 else:
@@ -1106,7 +1109,7 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                             external_id=ExternalId(str(reply.id))
                         )
                         if collected_items < maximum_items_to_collect:
-                            logging.info(f"Yielding reply item: {reply_item}")
+                            logging.info(f"Yielding item: reply - Content: {reply_item.content}")
                             yield reply_item
                             collected_items += 1
                         else:
@@ -1139,8 +1142,6 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
         except Exception as e:
             logging.error(f"An error occurred with cookies {cookie_file}: {e}")
 
-
-
 # Helper function to gather results from async generator
 async def gather_results(coroutine) -> List[Item]:
     results = []
@@ -1166,6 +1167,7 @@ async def query(parameters) -> AsyncGenerator[Item, None]:
 
 
 
+
 def generate_keywords(parameters, pick_default_keyword_weight, proxies_and_cookies, count=4):
     keywords = []
     actual_count = min(count, len(proxies_and_cookies))  # Ensure we don't exceed available proxies
@@ -1175,6 +1177,7 @@ def generate_keywords(parameters, pick_default_keyword_weight, proxies_and_cooki
         else:
             search_keyword = random.choice(SPECIAL_KEYWORDS_LIST)
         keywords.append(search_keyword)
+    logging.info(f"Generated keywords for search: {keywords}")
     return keywords
 
 
