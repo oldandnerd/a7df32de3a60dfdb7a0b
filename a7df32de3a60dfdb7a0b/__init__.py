@@ -1048,7 +1048,8 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
         # Check the buffer first
         if buffer:
             item = buffer.pop(0)
-            logging.info(f"Yielding item from buffer: {'reply' if 'in_reply_to_status_id' in item.url else 'tweet'}")
+            item_type = 'reply' if 'in_reply_to_status_id' in item.url else 'tweet'
+            logging.info(f"Yielding item from buffer: {item_type}")
             yield item
             collected_items += 1
             continue
@@ -1080,7 +1081,7 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                     external_id=ExternalId(str(tweet.id))
                 )
                 if collected_items < maximum_items_to_collect:
-                    logging.info(f"Yielding item: tweet")
+                    logging.info("Yielding item: tweet")
                     yield item
                     collected_items += 1
                 else:
@@ -1108,7 +1109,7 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                             external_id=ExternalId(str(reply.id))
                         )
                         if collected_items < maximum_items_to_collect:
-                            logging.info(f"Yielding item: reply")
+                            logging.info("Yielding item: reply")
                             yield reply_item
                             collected_items += 1
                         else:
@@ -1140,6 +1141,7 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
             logging.error(f"User not found with cookies: {cookie_file}")
         except Exception as e:
             logging.error(f"An error occurred with cookies {cookie_file}: {e}")
+
 
 
 # Helper function to gather results from async generator
