@@ -1000,7 +1000,7 @@ class ProxyCookieLoader:
         self.proxy_usage_count = {proxy: 0 for proxy, _ in proxies_and_cookies}
         self.proxy_last_used = {proxy: datetime.min for proxy, _ in proxies_and_cookies}
         self.max_requests_per_proxy = 50
-        self.proxy_cooldown_period = timedelta(minutes=15)  # Default cooldown period for other errors
+        self.default_cooldown_period = timedelta(minutes=15)  # Default cooldown period for other errors
         self.request_interval = timedelta(seconds=24)
         self.rate_limit_cooldown = timedelta(minutes=15)  # Specific cooldown for rate limits
 
@@ -1010,7 +1010,7 @@ class ProxyCookieLoader:
             available_proxies = [
                 (index, proxy, cookie_file) for index, (proxy, cookie_file) in enumerate(self.proxies_and_cookies)
                 if self.proxy_usage_count[proxy] < self.max_requests_per_proxy and 
-                (now - self.proxy_last_used[proxy]) >= self.request_interval
+                (now - self.proxy_last_used[proxy]) >= self.default_cooldown_period
             ]
 
             if available_proxies:
@@ -1021,21 +1021,21 @@ class ProxyCookieLoader:
                 logging.info(f"Loaded cookies from: {cookie_file} with proxy: {proxy}")
                 return proxy, cookie_file
             else:
-                next_available_time = min(self.proxy_last_used.values()) + self.request_interval
+                next_available_time = min(self.proxy_last_used.values()) + self.default_cooldown_period
                 wait_time = max((next_available_time - now).total_seconds(), 0)
                 logging.info(f"No proxies available. Next proxy available in {wait_time:.2f} seconds.")
                 await asyncio.sleep(wait_time)
 
     def mark_proxy_unavailable(self, proxy, cooldown_period=None):
         if cooldown_period is None:
-            cooldown_period = self.proxy_cooldown_period
+            cooldown_period = self.default_cooldown_period
         self.proxy_last_used[proxy] = datetime.now() + cooldown_period
         logging.info(f"Marked proxy {proxy} as unavailable for {cooldown_period.total_seconds() / 60} minutes.")
 
     def reset_usage(self):
         now = datetime.now()
         for proxy, last_used in self.proxy_last_used.items():
-            if (now - last_used) >= self.proxy_cooldown_period:
+            if (now - last_used) >= self.default_cooldown_period:
                 self.proxy_usage_count[proxy] = 0
         logging.info("All proxies have been reset.")
 
