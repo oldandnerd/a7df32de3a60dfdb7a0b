@@ -999,7 +999,7 @@ class ProxyCookieLoader:
         self.proxy_usage_count = {proxy: 0 for proxy, _ in proxies_and_cookies}
         self.proxy_last_used = {proxy: datetime.min for proxy, _ in proxies_and_cookies}
         self.max_requests_per_proxy = 50
-        self.proxy_cooldown_period = timedelta(minutes=15)
+        self.proxy_cooldown_period = timedelta(minutes=20)
         self.request_interval = timedelta(seconds=24)  # Interval between requests for each proxy
 
     async def load_next(self):
