@@ -7,7 +7,6 @@ import os
 from datetime import datetime, timezone, timedelta
 import re
 import twikit
-import collections
 
 from exorde_data import Item, Content, Author, CreatedAt, Url, Domain, ExternalId
 
@@ -1167,24 +1166,17 @@ async def query(parameters) -> AsyncGenerator[Item, None]:
 
 
 
-# Initialize a deque to keep track of the last 100 keywords used
-keyword_history = collections.deque(maxlen=100)
-
 def generate_keywords(parameters, pick_default_keyword_weight, proxies_and_cookies, count=4):
     keywords = []
     actual_count = min(count, len(proxies_and_cookies))  # Ensure we don't exceed available proxies
     for _ in range(actual_count):
-        search_keyword = None
         if random.random() < pick_default_keyword_weight:  # Use the specified weight
             search_keyword = parameters.get("keyword", random.choice(SPECIAL_KEYWORDS_LIST))
         else:
-            while not search_keyword or search_keyword in keyword_history:
-                search_keyword = random.choice(SPECIAL_KEYWORDS_LIST)
-        
-        keyword_history.append(search_keyword)
-        logging.info(f"Selected keyword: {search_keyword}")
+            search_keyword = random.choice(SPECIAL_KEYWORDS_LIST)
         keywords.append(search_keyword)
     return keywords
+
 
 
 
