@@ -1049,7 +1049,7 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
         if buffer:
             item = buffer.pop(0)
             item_type = 'reply' if 'in_reply_to_status_id' in item.url else 'tweet'
-            logging.info(f"Yielding item from buffer: {item_type}")
+            logging.info(f"Yielding item from buffer: {item_type} - Content: {item.content.text}")
             yield item
             collected_items += 1
             continue
@@ -1081,7 +1081,7 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                     external_id=ExternalId(str(tweet.id))
                 )
                 if collected_items < maximum_items_to_collect:
-                    logging.info("Yielding item: tweet")
+                    logging.info(f"Yielding item: tweet - Content: {item.content.text}")
                     yield item
                     collected_items += 1
                 else:
@@ -1109,7 +1109,7 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                             external_id=ExternalId(str(reply.id))
                         )
                         if collected_items < maximum_items_to_collect:
-                            logging.info("Yielding item: reply")
+                            logging.info(f"Yielding item: reply - Content: {reply_item.content.text}")
                             yield reply_item
                             collected_items += 1
                         else:
@@ -1168,6 +1168,7 @@ async def query(parameters) -> AsyncGenerator[Item, None]:
             yield item
 
 
+
 def generate_keywords(parameters, pick_default_keyword_weight, proxies_and_cookies, count=4):
     keywords = []
     actual_count = min(count, len(proxies_and_cookies))  # Ensure we don't exceed available proxies
@@ -1175,11 +1176,10 @@ def generate_keywords(parameters, pick_default_keyword_weight, proxies_and_cooki
         if random.random() < pick_default_keyword_weight:  # Use the specified weight
             search_keyword = parameters.get("keyword", random.choice(SPECIAL_KEYWORDS_LIST))
         else:
-            search_keyword = random.choice(SPECIAL_KEYWORDS_LIST)
+            search_keyword is random.choice(SPECIAL_KEYWORDS_LIST)
         keywords.append(search_keyword)
     logging.info(f"Generated keywords for search: {keywords}")
     return keywords
-
 
 
 
