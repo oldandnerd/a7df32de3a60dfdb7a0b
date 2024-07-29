@@ -1000,8 +1000,8 @@ class ProxyCookieLoader:
         self.proxy_usage_count = {proxy: 0 for proxy, _ in proxies_and_cookies}
         self.proxy_last_used = {proxy: datetime.min for proxy, _ in proxies_and_cookies}
         self.max_requests_per_proxy = 50
-        self.proxy_cooldown_period = timedelta(minutes=30)  # Increased cooldown period for rate-limited proxies
-        self.request_interval = timedelta(seconds=36)  # Interval between requests for each proxy
+        self.proxy_cooldown_period = timedelta(minutes=15)
+        self.request_interval = timedelta(seconds=24)
 
     async def load_next(self):
         while True:
@@ -1009,7 +1009,7 @@ class ProxyCookieLoader:
             available_proxies = [
                 (index, proxy, cookie_file) for index, (proxy, cookie_file) in enumerate(self.proxies_and_cookies)
                 if self.proxy_usage_count[proxy] < self.max_requests_per_proxy and 
-                (now - self.proxy_last_used[proxy]) >= self.request_interval
+                (now - self.proxy_last_used[proxy]) >= self.proxy_cooldown_period
             ]
 
             if available_proxies:
@@ -1020,7 +1020,7 @@ class ProxyCookieLoader:
                 logging.info(f"Loaded cookies from: {cookie_file} with proxy: {proxy}")
                 return proxy, cookie_file
             else:
-                next_available_time = min(self.proxy_last_used.values()) + self.request_interval
+                next_available_time = min(self.proxy_last_used.values()) + self.proxy_cooldown_period
                 wait_time = max((next_available_time - now).total_seconds(), 0)
                 logging.info(f"No proxies available. Next proxy available in {wait_time:.2f} seconds.")
                 await asyncio.sleep(wait_time)
@@ -1035,7 +1035,6 @@ class ProxyCookieLoader:
             if (now - last_used) >= self.proxy_cooldown_period:
                 self.proxy_usage_count[proxy] = 0
         logging.info("All proxies have been reset.")
-
 
 
 
@@ -1146,6 +1145,7 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                 logging.error(f"An error occurred with cookies {cookie_file}: {e}")
     except GeneratorExit:
         logging.info("GeneratorExit: Cleaning up the scrape generator.")
+
 
 
 async def gather_results(coroutine) -> List[Item]:
