@@ -985,7 +985,6 @@ def load_proxies_and_cookies():
 def format_created_at(dt):
     return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
-# Function to handle loading proxy and cookie
 class ProxyCookieLoader:
     def __init__(self, proxies_and_cookies):
         self.proxies_and_cookies = proxies_and_cookies
@@ -993,35 +992,45 @@ class ProxyCookieLoader:
         self.total_proxies = len(proxies_and_cookies)
         self.proxy_usage_count = {proxy: 0 for proxy, _ in proxies_and_cookies}
         self.proxy_last_used = {proxy: datetime.min for proxy, _ in proxies_and_cookies}
-        self.max_requests_per_proxy = 45
+        self.max_requests_per_proxy = 48
         self.proxy_cooldown_period = timedelta(minutes=15)
+        self.request_interval = timedelta(seconds=18)  # Approximate interval between requests for each proxy
 
-    def load_next(self):
-        while len(self.used_indices) < self.total_proxies:
+    async def load_next(self):
+        while True:
             index = random.randint(0, self.total_proxies - 1)
             proxy, cookie_file = self.proxies_and_cookies[index]
             now = datetime.now()
 
             if index not in self.used_indices:
+                last_used = self.proxy_last_used[proxy]
                 if self.proxy_usage_count[proxy] < self.max_requests_per_proxy or \
-                        (now - self.proxy_last_used[proxy]) >= self.proxy_cooldown_period:
-                    self.used_indices.add(index)
-                    self.proxy_usage_count[proxy] += 1
-                    self.proxy_last_used[proxy] = now
-                    client.load_cookies(cookie_file)
-                    logging.info(f"Loaded cookies from: {cookie_file} with proxy: {proxy}")
-                    return proxy, cookie_file
-        self.used_indices.clear()  # Reset the used indices after all proxies have been used once
-        return self.load_next()  # Retry after resetting
+                        (now - last_used) >= self.proxy_cooldown_period:
+                    if (now - last_used) >= self.request_interval:
+                        self.used_indices.add(index)
+                        self.proxy_usage_count[proxy] += 1
+                        self.proxy_last_used[proxy] = now
+                        client.load_cookies(cookie_file)
+                        logging.info(f"Loaded cookies from: {cookie_file} with proxy: {proxy}")
+                        return proxy, cookie_file
+            await asyncio.sleep(1)  # Short sleep to avoid tight loop
 
-# Function to scrape tweets based on query
+    def reset_usage(self):
+        now = datetime.now()
+        for proxy, last_used in self.proxy_last_used.items():
+            if (now - last_used) >= self.proxy_cooldown_period:
+                self.proxy_usage_count[proxy] = 0
+        self.used_indices.clear()
+
+
+
 async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, maximum_items_to_collect: int, proxy_cookie_loader: ProxyCookieLoader) -> AsyncGenerator[Item, None]:
     collected_items = 0
     current_time = datetime.now(timezone.utc)
     max_oldness_duration = timedelta(seconds=max_oldness_seconds)
 
     while collected_items < maximum_items_to_collect:
-        proxy, cookie_file = proxy_cookie_loader.load_next()
+        proxy, cookie_file = await proxy_cookie_loader.load_next()
         try:
             search_results = await client.search_tweet(query=query, product='Latest', count=100)
             logging.info("Search successful.")
@@ -1078,6 +1087,7 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                         collected_items += 1
                         if collected_items >= maximum_items_to_collect:
                             return
+            await asyncio.sleep(1)  # Ensure some delay between requests
             break  # Exit the loop if search is successful
         except twikit.errors.TooManyRequests as e:
             logging.error(f"Rate limit exceeded: {e}. Retrying in 5 seconds...")
@@ -1105,6 +1115,8 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
         except Exception as e:
             logging.error(f"An error occurred with cookies {cookie_file}: {e}")
 
+
+
 # Helper function to gather results from async generator
 async def gather_results(coroutine) -> List[Item]:
     results = []
@@ -1112,7 +1124,6 @@ async def gather_results(coroutine) -> List[Item]:
         results.append(item)
     return results
 
-# Function to query tweets based on parameters in parallel
 async def query(parameters) -> AsyncGenerator[Item, None]:
     max_oldness_seconds, maximum_items_to_collect, min_post_length, pick_default_keyword_weight = read_parameters(parameters)
     keywords = generate_keywords(parameters, pick_default_keyword_weight)
@@ -1126,6 +1137,8 @@ async def query(parameters) -> AsyncGenerator[Item, None]:
     for result in results:
         for item in result:
             yield item
+
+
 
 # Function to generate multiple keywords based on parameters with specified probabilities
 def generate_keywords(parameters, pick_default_keyword_weight, count=4):
