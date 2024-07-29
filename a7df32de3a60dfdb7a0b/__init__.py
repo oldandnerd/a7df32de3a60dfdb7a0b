@@ -1010,7 +1010,7 @@ class ProxyCookieLoader:
             available_proxies = [
                 (index, proxy, cookie_file) for index, (proxy, cookie_file) in enumerate(self.proxies_and_cookies)
                 if self.proxy_usage_count[proxy] < self.max_requests_per_proxy and 
-                (now - self.proxy_last_used[proxy]) >= self.proxy_last_used[proxy] - now
+                (now - self.proxy_last_used[proxy]) >= self.request_interval
             ]
 
             if available_proxies:
@@ -1021,7 +1021,7 @@ class ProxyCookieLoader:
                 logging.info(f"Loaded cookies from: {cookie_file} with proxy: {proxy}")
                 return proxy, cookie_file
             else:
-                next_available_time = min(self.proxy_last_used.values()) + self.default_cooldown_period
+                next_available_time = min(self.proxy_last_used.values())
                 wait_time = max((next_available_time - now).total_seconds(), 0)
                 logging.info(f"No proxies available. Next proxy available in {wait_time:.2f} seconds.")
                 await asyncio.sleep(wait_time)
@@ -1038,6 +1038,7 @@ class ProxyCookieLoader:
             if (now - last_used) >= self.default_cooldown_period:
                 self.proxy_usage_count[proxy] = 0
         logging.info("All proxies have been reset.")
+
 
 
 
@@ -1148,6 +1149,7 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                 logging.error(f"An error occurred with cookies {cookie_file}: {e}")
     except GeneratorExit:
         logging.info("GeneratorExit: Cleaning up the scrape generator.")
+
 
 
 
