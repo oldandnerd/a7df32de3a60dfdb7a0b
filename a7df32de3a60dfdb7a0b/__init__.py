@@ -992,7 +992,7 @@ class ProxyCookieLoader:
         self.total_proxies = len(proxies_and_cookies)
         self.proxy_usage_count = {proxy: 0 for proxy, _ in proxies_and_cookies}
         self.proxy_last_used = {proxy: datetime.min for proxy, _ in proxies_and_cookies}
-        self.max_requests_per_proxy = 48
+        self.max_requests_per_proxy = 50
         self.proxy_cooldown_period = timedelta(minutes=15)
         self.request_interval = timedelta(seconds=18)  # Approximate interval between requests for each proxy
 
@@ -1021,6 +1021,7 @@ class ProxyCookieLoader:
             if (now - last_used) >= self.proxy_cooldown_period:
                 self.proxy_usage_count[proxy] = 0
         self.used_indices.clear()
+
 
 
 
@@ -1152,6 +1153,7 @@ def generate_keywords(parameters, pick_default_keyword_weight, proxies_and_cooki
             search_keyword = random.choice(SPECIAL_KEYWORDS_LIST)
         keywords.append(search_keyword)
     return keywords
+
 
 
 # Default values for parameters
