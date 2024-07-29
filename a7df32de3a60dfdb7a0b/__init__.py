@@ -14,7 +14,7 @@ client = twikit.Client(language='en-US')
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
-
+logging.getLogger('httpx').setLevel(logging.WARNING)  # Suppress httpx info logs
 
 ##### SPECIAL MODE
 # TOP 222
@@ -965,7 +965,6 @@ SPECIAL_KEYWORDS_LIST = [
     "高級"
     ]
 ############
-
 
 # Load all cookies and proxies from the ips.txt file
 def load_proxies_and_cookies():
