@@ -1016,17 +1016,12 @@ class ProxyCookieLoader:
                 self.proxy_last_used[proxy] = now
                 client.load_cookies(cookie_file)
                 logging.info(f"Loaded cookies from: {cookie_file} with proxy: {proxy}")
-                await asyncio.sleep(self.request_interval.total_seconds())  # Ensure delay between requests
                 return proxy, cookie_file
             else:
                 next_available_time = min(self.proxy_last_used.values()) + self.request_interval
-                wait_time = (next_available_time - now).total_seconds()
-                if wait_time > 0:
-                    logging.info(f"No proxies available. Next proxy available in {wait_time:.2f} seconds.")
-                    await asyncio.sleep(wait_time)
-                else:
-                    # Reset usage count if all proxies are cooled down
-                    self.reset_usage()
+                wait_time = max((next_available_time - now).total_seconds(), 0)
+                logging.info(f"No proxies available. Next proxy available in {wait_time:.2f} seconds.")
+                await asyncio.sleep(wait_time)
 
     def reset_usage(self):
         now = datetime.now()
@@ -1035,7 +1030,6 @@ class ProxyCookieLoader:
                 self.proxy_usage_count[proxy] = 0
         self.proxy_last_used = {proxy: datetime.min for proxy, _ in self.proxies_and_cookies}  # Reset last used times
         logging.info("All proxies have been reset.")
-
 
 
 
