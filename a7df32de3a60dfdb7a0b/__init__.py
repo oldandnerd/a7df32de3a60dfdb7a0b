@@ -1126,9 +1126,11 @@ async def gather_results(coroutine) -> List[Item]:
 
 async def query(parameters) -> AsyncGenerator[Item, None]:
     max_oldness_seconds, maximum_items_to_collect, min_post_length, pick_default_keyword_weight = read_parameters(parameters)
-    keywords = generate_keywords(parameters, pick_default_keyword_weight)
     proxies_and_cookies = load_proxies_and_cookies()
     proxy_cookie_loader = ProxyCookieLoader(proxies_and_cookies)
+    keyword_count = min(4, len(proxies_and_cookies))  # Use the number of proxies as the limit
+
+    keywords = generate_keywords(parameters, pick_default_keyword_weight, proxies_and_cookies, count=keyword_count)
 
     tasks = [gather_results(scrape(keyword, max_oldness_seconds, min_post_length, maximum_items_to_collect // len(keywords), proxy_cookie_loader)) for keyword in keywords]
     
@@ -1140,16 +1142,17 @@ async def query(parameters) -> AsyncGenerator[Item, None]:
 
 
 
-# Function to generate multiple keywords based on parameters with specified probabilities
-def generate_keywords(parameters, pick_default_keyword_weight, count=4):
+def generate_keywords(parameters, pick_default_keyword_weight, proxies_and_cookies, count=4):
     keywords = []
-    for _ in range(count):
+    actual_count = min(count, len(proxies_and_cookies))  # Ensure we don't exceed available proxies
+    for _ in range(actual_count):
         if random.random() < pick_default_keyword_weight:  # Use the specified weight
             search_keyword = parameters.get("keyword", random.choice(SPECIAL_KEYWORDS_LIST))
         else:
             search_keyword = random.choice(SPECIAL_KEYWORDS_LIST)
         keywords.append(search_keyword)
     return keywords
+
 
 # Default values for parameters
 DEFAULT_OLDNESS_SECONDS = 120
