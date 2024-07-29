@@ -1000,8 +1000,9 @@ class ProxyCookieLoader:
         self.proxy_usage_count = {proxy: 0 for proxy, _ in proxies_and_cookies}
         self.proxy_last_used = {proxy: datetime.min for proxy, _ in proxies_and_cookies}
         self.max_requests_per_proxy = 50
-        self.proxy_cooldown_period = timedelta(minutes=60)
-        self.request_interval = timedelta(seconds=72)
+        self.proxy_cooldown_period = timedelta(minutes=15)  # Default cooldown period for other errors
+        self.request_interval = timedelta(seconds=24)
+        self.rate_limit_cooldown = timedelta(minutes=15)  # Specific cooldown for rate limits
 
     async def load_next(self):
         while True:
@@ -1009,7 +1010,7 @@ class ProxyCookieLoader:
             available_proxies = [
                 (index, proxy, cookie_file) for index, (proxy, cookie_file) in enumerate(self.proxies_and_cookies)
                 if self.proxy_usage_count[proxy] < self.max_requests_per_proxy and 
-                (now - self.proxy_last_used[proxy]) >= self.proxy_cooldown_period
+                (now - self.proxy_last_used[proxy]) >= self.request_interval
             ]
 
             if available_proxies:
@@ -1020,14 +1021,16 @@ class ProxyCookieLoader:
                 logging.info(f"Loaded cookies from: {cookie_file} with proxy: {proxy}")
                 return proxy, cookie_file
             else:
-                next_available_time = min(self.proxy_last_used.values()) + self.proxy_cooldown_period
+                next_available_time = min(self.proxy_last_used.values()) + self.request_interval
                 wait_time = max((next_available_time - now).total_seconds(), 0)
                 logging.info(f"No proxies available. Next proxy available in {wait_time:.2f} seconds.")
                 await asyncio.sleep(wait_time)
 
-    def mark_proxy_unavailable(self, proxy):
-        self.proxy_last_used[proxy] = datetime.now() + self.proxy_cooldown_period
-        logging.info(f"Marked proxy {proxy} as unavailable for {self.proxy_cooldown_period.total_seconds() / 60} minutes.")
+    def mark_proxy_unavailable(self, proxy, cooldown_period=None):
+        if cooldown_period is None:
+            cooldown_period = self.proxy_cooldown_period
+        self.proxy_last_used[proxy] = datetime.now() + cooldown_period
+        logging.info(f"Marked proxy {proxy} as unavailable for {cooldown_period.total_seconds() / 60} minutes.")
 
     def reset_usage(self):
         now = datetime.now()
@@ -1035,7 +1038,6 @@ class ProxyCookieLoader:
             if (now - last_used) >= self.proxy_cooldown_period:
                 self.proxy_usage_count[proxy] = 0
         logging.info("All proxies have been reset.")
-
 
 
 
@@ -1120,7 +1122,7 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                 await asyncio.sleep(1)  # Ensure some delay between requests
             except twikit.errors.TooManyRequests as e:
                 logging.error(f"Rate limit exceeded: {e}. Proxy will be unavailable for 15 minutes.")
-                proxy_cookie_loader.mark_proxy_unavailable(proxy)
+                proxy_cookie_loader.mark_proxy_unavailable(proxy, proxy_cookie_loader.rate_limit_cooldown)
             except twikit.errors.BadRequest as e:
                 logging.error(f"Bad request with cookies: {cookie_file}")
             except twikit.errors.Unauthorized as e:
