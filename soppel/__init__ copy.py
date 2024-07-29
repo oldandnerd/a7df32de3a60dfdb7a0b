@@ -2,12 +2,12 @@ import asyncio
 import logging
 import random
 import hashlib
-from typing import List, AsyncGenerator
 import os
 from datetime import datetime, timezone, timedelta
-import re
+from typing import AsyncGenerator
+import httpx
 import twikit
-
+import re
 from exorde_data import Item, Content, Author, CreatedAt, Url, Domain, ExternalId
 
 # Initialize Twikit client
@@ -986,77 +986,35 @@ def load_proxies_and_cookies():
 def format_created_at(dt):
     return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
-
-
-
-
-
-
+# Function to handle loading proxy and cookie
 class ProxyCookieLoader:
     def __init__(self, proxies_and_cookies):
         self.proxies_and_cookies = proxies_and_cookies
+        self.used_indices = set()
         self.total_proxies = len(proxies_and_cookies)
-        self.proxy_usage_count = {proxy: 0 for proxy, _ in proxies_and_cookies}
-        self.proxy_last_used = {proxy: datetime.min for proxy, _ in proxies_and_cookies}
-        self.max_requests_per_proxy = 50
-        self.proxy_cooldown_period = timedelta(minutes=15)
-        self.request_interval = timedelta(seconds=18)  # Interval between requests for each proxy
-
-    async def load_next(self):
-        while True:
-            now = datetime.now()
-            available_proxies = [
-                (index, proxy, cookie_file) for index, (proxy, cookie_file) in enumerate(self.proxies_and_cookies)
-                if self.proxy_usage_count[proxy] < self.max_requests_per_proxy and 
-                (now - self.proxy_last_used[proxy]) >= self.request_interval
-            ]
-
-            if available_proxies:
-                index, proxy, cookie_file = random.choice(available_proxies)
-                self.proxy_usage_count[proxy] += 1
-                self.proxy_last_used[proxy] = now
+    
+    def load_next(self):
+        while len(self.used_indices) < self.total_proxies:
+            index = random.randint(0, self.total_proxies - 1)
+            if index not in self.used_indices:
+                self.used_indices.add(index)
+                proxy, cookie_file = self.proxies_and_cookies[index]
                 client.load_cookies(cookie_file)
                 logging.info(f"Loaded cookies from: {cookie_file} with proxy: {proxy}")
                 return proxy, cookie_file
-            else:
-                next_available_time = min(self.proxy_last_used.values()) + self.request_interval
-                wait_time = max((next_available_time - now).total_seconds(), 0)
-                logging.info(f"No proxies available. Next proxy available in {wait_time:.2f} seconds.")
-                await asyncio.sleep(wait_time)
+        self.used_indices.clear()  # Reset the used indices after all proxies have been used once
+        return self.load_next()  # Retry after resetting
 
-    def reset_usage(self):
-        now = datetime.now()
-        for proxy, last_used in self.proxy_last_used.items():
-            if (now - last_used) >= self.proxy_cooldown_period:
-                self.proxy_usage_count[proxy] = 0
-        logging.info("All proxies have been reset.")
-
-
-
-
-
-
-buffer = []  # Initialize a global buffer to store extra items
-
+# Function to scrape tweets based on query
 async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, maximum_items_to_collect: int, proxy_cookie_loader: ProxyCookieLoader) -> AsyncGenerator[Item, None]:
-    global buffer
     collected_items = 0
     current_time = datetime.now(timezone.utc)
     max_oldness_duration = timedelta(seconds=max_oldness_seconds)
 
     while collected_items < maximum_items_to_collect:
-        # Check the buffer first
-        if buffer:
-            item = buffer.pop(0)
-            logging.info(f"Yielding item from buffer: {'reply' if 'in_reply_to_status_id' in item.url else 'tweet'}")
-            yield item
-            collected_items += 1
-            continue
-
-        proxy, cookie_file = await proxy_cookie_loader.load_next()
+        proxy, cookie_file = proxy_cookie_loader.load_next()
         try:
-            logging.info(f"Searching with keyword: {query}")
-            search_results = await client.search_tweet(query=query, product='Latest', count=100)
+            search_results = await client.search_tweet(query=query, product='Latest')
             logging.info("Search successful.")
 
             for tweet in search_results:
@@ -1079,42 +1037,12 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
                     url=Url(f"https://x.com/{tweet.user.screen_name}/status/{tweet.id}"),
                     external_id=ExternalId(str(tweet.id))
                 )
-                if collected_items < maximum_items_to_collect:
-                    logging.info(f"Yielding item: tweet")
-                    yield item
-                    collected_items += 1
-                else:
-                    buffer.append(item)
-
-                # Process replies if available
-                if hasattr(tweet, 'replies') and tweet.replies:
-                    for reply in tweet.replies:
-                        reply_age = current_time - reply.created_at_datetime
-                        if reply_age > max_oldness_duration:
-                            continue
-
-                        reply_content = reply.text.strip()
-                        if not reply_content or len(reply_content) < min_post_length or re.match(r"^(?:pic\.twitter\.com|https?://t\.co/)\b", reply_content):
-                            logging.debug(f"Skipped reply with URL: https://x.com/{reply.user.screen_name}/status/{reply.id}")
-                            continue
-
-                        reply_author = reply.user.name if reply.user.name else '[deleted]'
-                        reply_item = Item(
-                            content=Content(reply_content),
-                            author=Author(hashlib.sha1(bytes(reply_author, encoding="utf-8")).hexdigest()),
-                            created_at=CreatedAt(format_created_at(reply.created_at_datetime)),
-                            domain=Domain("x.com"),
-                            url=Url(f"https://x.com/{reply.user.screen_name}/status/{reply.id}"),
-                            external_id=ExternalId(str(reply.id))
-                        )
-                        if collected_items < maximum_items_to_collect:
-                            logging.info(f"Yielding item: reply")
-                            yield reply_item
-                            collected_items += 1
-                        else:
-                            buffer.append(reply_item)
-
-            await asyncio.sleep(1)  # Ensure some delay between requests
+                logging.info(f"Yielding item: {item}")
+                yield item
+                collected_items += 1
+                if collected_items >= maximum_items_to_collect:
+                    return
+            break  # Exit the loop if search is successful
         except twikit.errors.TooManyRequests as e:
             logging.error(f"Rate limit exceeded: {e}. Retrying in 5 seconds...")
             await asyncio.sleep(5)
@@ -1141,46 +1069,22 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, max
         except Exception as e:
             logging.error(f"An error occurred with cookies {cookie_file}: {e}")
 
-
-# Helper function to gather results from async generator
-async def gather_results(coroutine) -> List[Item]:
-    results = []
-    async for item in coroutine:
-        results.append(item)
-    return results
-
+# Function to query tweets based on parameters
 async def query(parameters) -> AsyncGenerator[Item, None]:
     max_oldness_seconds, maximum_items_to_collect, min_post_length, pick_default_keyword_weight = read_parameters(parameters)
+    keyword = generate_keyword(parameters, pick_default_keyword_weight)
     proxies_and_cookies = load_proxies_and_cookies()
     proxy_cookie_loader = ProxyCookieLoader(proxies_and_cookies)
-    keyword_count = min(4, len(proxies_and_cookies))  # Use the number of proxies as the limit
+    async for item in scrape(keyword, max_oldness_seconds, min_post_length, maximum_items_to_collect, proxy_cookie_loader):
+        yield item
 
-    keywords = generate_keywords(parameters, pick_default_keyword_weight, proxies_and_cookies, count=keyword_count)
-
-    tasks = [gather_results(scrape(keyword, max_oldness_seconds, min_post_length, maximum_items_to_collect // len(keywords), proxy_cookie_loader)) for keyword in keywords]
-    
-    results = await asyncio.gather(*tasks)
-
-    for result in results:
-        for item in result:
-            yield item
-
-
-def generate_keywords(parameters, pick_default_keyword_weight, proxies_and_cookies, count=4):
-    keywords = []
-    actual_count = min(count, len(proxies_and_cookies))  # Ensure we don't exceed available proxies
-    for _ in range(actual_count):
-        if random.random() < pick_default_keyword_weight:  # Use the specified weight
-            search_keyword = parameters.get("keyword", random.choice(SPECIAL_KEYWORDS_LIST))
-        else:
-            search_keyword = random.choice(SPECIAL_KEYWORDS_LIST)
-        keywords.append(search_keyword)
-    logging.info(f"Generated keywords for search: {keywords}")
-    return keywords
-
-
-
-
+# Function to generate a keyword based on parameters with specified probabilities
+def generate_keyword(parameters, pick_default_keyword_weight):
+    if random.random() < pick_default_keyword_weight:  # Use the specified weight
+        search_keyword = parameters.get("keyword", random.choice(SPECIAL_KEYWORDS_LIST))
+    else:
+        search_keyword = random.choice(SPECIAL_KEYWORDS_LIST)
+    return search_keyword
 
 # Default values for parameters
 DEFAULT_OLDNESS_SECONDS = 120
@@ -1201,4 +1105,9 @@ def read_parameters(parameters):
         min_post_length = DEFAULT_MIN_POST_LENGTH
         pick_default_keyword_weight = DEFAULT_DEFAULT_KEYWORD_WEIGHT_PICK
 
-    return max_oldness_seconds, maximum_items_to_collect, min_post_length, pick_default_keyword_weight
+    return (
+        max_oldness_seconds,
+        maximum_items_to_collect,
+        min_post_length,
+        pick_default_keyword_weight,
+    )
