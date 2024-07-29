@@ -991,6 +991,7 @@ def format_created_at(dt):
 
 
 
+
 class ProxyCookieLoader:
     def __init__(self, proxies_and_cookies):
         self.proxies_and_cookies = proxies_and_cookies
@@ -1033,18 +1034,19 @@ class ProxyCookieLoader:
         for proxy, last_used in self.proxy_last_used.items():
             if (now - last_used) >= self.proxy_cooldown_period:
                 self.proxy_usage_count[proxy] = 0
-        self.used_indices.clear()
 
 
 
 
 
 
-async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, proxy_cookie_loader: ProxyCookieLoader) -> AsyncGenerator[Item, None]:
+
+async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, maximum_items_to_collect: int, proxy_cookie_loader: ProxyCookieLoader) -> AsyncGenerator[Item, None]:
+    collected_items = 0
     current_time = datetime.now(timezone.utc)
     max_oldness_duration = timedelta(seconds=max_oldness_seconds)
 
-    while True:
+    while collected_items < maximum_items_to_collect:
         proxy, cookie_file = await proxy_cookie_loader.load_next()
         try:
             search_results = await client.search_tweet(query=query, product='Latest', count=100)
@@ -1072,6 +1074,9 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, pro
                 )
                 logging.info(f"Yielding item: {item}")
                 yield item
+                collected_items += 1
+                if collected_items >= maximum_items_to_collect:
+                    return
 
                 # Process replies if available
                 if hasattr(tweet, 'replies') and tweet.replies:
@@ -1096,6 +1101,9 @@ async def scrape(query: str, max_oldness_seconds: int, min_post_length: int, pro
                         )
                         logging.info(f"Yielding reply item: {reply_item}")
                         yield reply_item
+                        collected_items += 1
+                        if collected_items >= maximum_items_to_collect:
+                            return
 
             await asyncio.sleep(1)  # Ensure some delay between requests
         except twikit.errors.TooManyRequests as e:
@@ -1135,14 +1143,14 @@ async def gather_results(coroutine) -> List[Item]:
     return results
 
 async def query(parameters) -> AsyncGenerator[Item, None]:
-    max_oldness_seconds, min_post_length, pick_default_keyword_weight = read_parameters(parameters)
+    max_oldness_seconds, maximum_items_to_collect, min_post_length, pick_default_keyword_weight = read_parameters(parameters)
     proxies_and_cookies = load_proxies_and_cookies()
     proxy_cookie_loader = ProxyCookieLoader(proxies_and_cookies)
     keyword_count = min(4, len(proxies_and_cookies))  # Use the number of proxies as the limit
 
     keywords = generate_keywords(parameters, pick_default_keyword_weight, proxies_and_cookies, count=keyword_count)
 
-    tasks = [gather_results(scrape(keyword, max_oldness_seconds, min_post_length, proxy_cookie_loader)) for keyword in keywords]
+    tasks = [gather_results(scrape(keyword, max_oldness_seconds, min_post_length, maximum_items_to_collect // len(keywords), proxy_cookie_loader)) for keyword in keywords]
     
     results = await asyncio.gather(*tasks)
 
@@ -1167,7 +1175,6 @@ def generate_keywords(parameters, pick_default_keyword_weight, proxies_and_cooki
 
 
 
-
 # Default values for parameters
 DEFAULT_OLDNESS_SECONDS = 120
 DEFAULT_MAXIMUM_ITEMS = 25
@@ -1177,12 +1184,14 @@ DEFAULT_DEFAULT_KEYWORD_WEIGHT_PICK = 0.5
 def read_parameters(parameters):
     if parameters and isinstance(parameters, dict):
         max_oldness_seconds = parameters.get("max_oldness_seconds", DEFAULT_OLDNESS_SECONDS)
+        maximum_items_to_collect = parameters.get("maximum_items_to_collect", DEFAULT_MAXIMUM_ITEMS)
         min_post_length = parameters.get("min_post_length", DEFAULT_MIN_POST_LENGTH)
         pick_default_keyword_weight = parameters.get("pick_default_keyword_weight", DEFAULT_DEFAULT_KEYWORD_WEIGHT_PICK)
     else:
         # Assign default values if parameters is empty or None
         max_oldness_seconds = DEFAULT_OLDNESS_SECONDS
+        maximum_items_to_collect = DEFAULT_MAXIMUM_ITEMS
         min_post_length = DEFAULT_MIN_POST_LENGTH
         pick_default_keyword_weight = DEFAULT_DEFAULT_KEYWORD_WEIGHT_PICK
 
-    return max_oldness_seconds, min_post_length, pick_default_keyword_weight
+    return max_oldness_seconds, maximum_items_to_collect, min_post_length, pick_default_keyword_weight
