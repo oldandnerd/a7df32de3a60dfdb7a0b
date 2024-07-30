@@ -23,7 +23,7 @@ def format_created_at(dt_str):
 
 # Main scraping function
 async def scrape(size: int, maximum_items_to_collect: int) -> AsyncGenerator[Item, None]:
-    url = "http://192.168.10.142:8000/get_tweets"
+    url = "http://192.227.159.4:8000/get_tweets"
     headers = {
         "Content-Type": "application/json"
     }
@@ -68,9 +68,7 @@ async def scrape(size: int, maximum_items_to_collect: int) -> AsyncGenerator[Ite
 async def query(parameters: dict) -> AsyncGenerator[Item, None]:
     size = parameters.get("size", DEFAULT_SIZE)  # Use the global default size
     maximum_items_to_collect = parameters.get("maximum_items_to_collect", DEFAULT_MAXIMUM_ITEMS)  # Use the global default max items
-
     logging.info(f"Querying {size} items per request.")
-    
     async for item in scrape(size, maximum_items_to_collect):
         yield item
 
