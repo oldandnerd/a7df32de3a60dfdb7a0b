@@ -4,6 +4,8 @@ import hashlib
 from typing import List, AsyncGenerator, Dict
 import httpx
 from datetime import datetime
+
+# Importing necessary modules from exorde_data
 from exorde_data import Item, Content, Author, CreatedAt, Url, Domain, ExternalId
 
 # Setup logging
@@ -67,12 +69,8 @@ async def query(parameters: dict) -> AsyncGenerator[Item, None]:
     size = parameters.get("size", DEFAULT_SIZE)  # Use the global default size
     maximum_items_to_collect = parameters.get("maximum_items_to_collect", DEFAULT_MAXIMUM_ITEMS)  # Use the global default max items
     logging.info(f"Querying {size} items per request.")
-    try:
-        async for item in scrape(size, maximum_items_to_collect):
-            yield item
-    except GeneratorExit:
-        logging.info("GeneratorExit encountered. Closing the generator.")
-        return
+    async for item in scrape(size, maximum_items_to_collect):
+        yield item
 
 # Function to gather results for testing
 async def gather_results(parameters: dict) -> List[Item]:
@@ -80,17 +78,3 @@ async def gather_results(parameters: dict) -> List[Item]:
     async for item in query(parameters):
         results.append(item)
     return results
-
-# Main function to execute the script
-async def main():
-    parameters = {
-        "size": 10,
-        "maximum_items_to_collect": 25
-    }
-    results = await gather_results(parameters)
-    for item in results:
-        print(item)
-
-# Entry point for the script
-if __name__ == "__main__":
-    asyncio.run(main())
