@@ -11,8 +11,9 @@ logging.basicConfig(level=logging.INFO)
 logging.getLogger('httpx').setLevel(logging.WARNING)  # Set httpx logging level to WARNING to suppress info logs
 
 # Global configuration
-DEFAULT_SIZE = 10
+DEFAULT_SIZE = 5
 DEFAULT_MAXIMUM_ITEMS = 25  # Default maximum items to collect
+DELAY_SECONDS = 3  # Delay between each request in seconds
 
 # Function to format created_at datetime
 def format_created_at(dt_str):
@@ -31,36 +32,38 @@ async def scrape(size: int, maximum_items_to_collect: int) -> AsyncGenerator[Ite
 
     collected_items = 0
     async with httpx.AsyncClient() as client:
-        response = await client.post(url, headers=headers, json=data)
-        response.raise_for_status()
-        tweets = response.json().get("tweets", [])
+        while collected_items < maximum_items_to_collect:
+            await asyncio.sleep(DELAY_SECONDS)  # Add delay before each request
+            response = await client.post(url, headers=headers, json=data)
+            response.raise_for_status()
+            tweets = response.json().get("tweets", [])
 
-        for tweet in tweets:
-            if collected_items >= maximum_items_to_collect:
-                break
+            for tweet in tweets:
+                if collected_items >= maximum_items_to_collect:
+                    break
 
-            content = tweet.get("content_", "").strip()
-            if not content:
-                continue
+                content = tweet.get("content_", "").strip()
+                if not content:
+                    continue
 
-            post_author = tweet.get("author_", "[deleted]")
-            created_at = tweet.get("created_at_", "")
-            domain = tweet.get("domain_", "x.com")
-            url = tweet.get("url_", "")
-            external_id = tweet.get("external_id_", "")
+                post_author = tweet.get("author_", "[deleted]")
+                created_at = tweet.get("created_at_", "")
+                domain = tweet.get("domain_", "x.com")
+                url = tweet.get("url_", "")
+                external_id = tweet.get("external_id_", "")
 
-            item = Item(
-                content=Content(content),
-                author=Author(hashlib.sha1(bytes(post_author, encoding="utf-8")).hexdigest()),
-                created_at=CreatedAt(format_created_at(created_at)),
-                domain=Domain(domain),
-                url=Url(url),
-                external_id=ExternalId(external_id)
-            )
+                item = Item(
+                    content=Content(content),
+                    author=Author(hashlib.sha1(bytes(post_author, encoding="utf-8")).hexdigest()),
+                    created_at=CreatedAt(format_created_at(created_at)),
+                    domain=Domain(domain),
+                    url=Url(url),
+                    external_id=ExternalId(external_id)
+                )
 
-            logging.info(f"Yielding item: {item}")
-            yield item
-            collected_items += 1
+                logging.info(f"Yielding item: {item}")
+                yield item
+                collected_items += 1
 
 # Main interface function
 async def query(parameters: dict) -> AsyncGenerator[Item, None]:
