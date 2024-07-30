@@ -77,13 +77,3 @@ async def gather_results(parameters: dict) -> List[Item]:
     async for item in query(parameters):
         results.append(item)
     return results
-
-# Testing the functions
-if __name__ == "__main__":
-    test_parameters = {
-        "size": 10,  # Example size
-        "maximum_items_to_collect": 5  # Example maximum items to collect
-    }
-    results = asyncio.run(gather_results(test_parameters))
-    for result in results:
-        print(result)
