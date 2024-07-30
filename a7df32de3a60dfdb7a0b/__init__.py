@@ -13,7 +13,7 @@ logging.getLogger('httpx').setLevel(logging.WARNING)  # Set httpx logging level 
 # Global configuration
 DEFAULT_SIZE = 5
 DEFAULT_MAXIMUM_ITEMS = 25  # Default maximum items to collect
-DELAY_SECONDS = 10  # Delay between each request in seconds
+DELAY_SECONDS = 15  # Delay between each request in seconds
 
 # Function to format created_at datetime
 def format_created_at(dt_str):
