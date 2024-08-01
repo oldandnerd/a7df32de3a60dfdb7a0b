@@ -64,9 +64,8 @@ async def fetch_data(size: int):
 # Main scraping function
 async def scrape(size: int, maximum_items_to_collect: int) -> AsyncGenerator[Item, None]:
     collected_items = 0
-
-    while collected_items < maximum_items_to_collect:
-        try:
+    try:
+        while collected_items < maximum_items_to_collect:
             if not cached_items:
                 await fetch_data(size)
 
@@ -75,10 +74,11 @@ async def scrape(size: int, maximum_items_to_collect: int) -> AsyncGenerator[Ite
                 logging.info(f"Yielding item: {item}")
                 yield item
                 collected_items += 1
-
-        except GeneratorExit:
-            logging.info("GeneratorExit encountered in scrape. Closing the generator.")
-            return
+    except GeneratorExit:
+        logging.info("GeneratorExit encountered in scrape. Closing the generator.")
+    finally:
+        # Add any necessary cleanup code here (e.g., closing connections)
+        pass
 
 # Main interface function
 async def query(parameters: dict) -> AsyncGenerator[Item, None]:
@@ -90,7 +90,9 @@ async def query(parameters: dict) -> AsyncGenerator[Item, None]:
             yield item
     except GeneratorExit:
         logging.info("GeneratorExit encountered in query. Closing the generator.")
-        return
+    finally:
+        # Add any necessary cleanup code here (e.g., closing connections)
+        pass
 
 # Function to gather results for testing
 async def gather_results(parameters: dict) -> List[Item]:
