@@ -95,6 +95,11 @@ def load_state() -> List[Item]:
 async def scrape(size: int, maximum_items_to_collect: int) -> AsyncGenerator[Item, None]:
     """Scrape data and yield items up to the maximum specified."""
     collected_items = 0
+
+    # Load the state if it exists
+    global cached_items
+    cached_items.extend(load_state())
+
     try:
         while collected_items < maximum_items_to_collect:
             if not cached_items:
@@ -105,14 +110,14 @@ async def scrape(size: int, maximum_items_to_collect: int) -> AsyncGenerator[Ite
                 logging.info(f"Yielding item: {item}")
                 yield item
                 collected_items += 1
-                save_state([item])
+                save_state(cached_items)
             except GeneratorExit:
-                logging.info("GeneratorExit encountered within loop. Saving state and continuing processing.")
-                save_state([item])
-                # Re-raise the GeneratorExit after processing the current item
+                logging.info("GeneratorExit encountered within loop. Saving state and re-raising exception.")
+                save_state(cached_items)
                 raise
     except GeneratorExit:
         logging.info("GeneratorExit encountered in scrape. Saving state and closing the generator.")
+        save_state(cached_items)
     finally:
         save_state(cached_items)
         # Add any necessary cleanup code here (e.g., closing connections)
@@ -128,7 +133,8 @@ async def query(parameters: Dict) -> AsyncGenerator[Item, None]:
         async for item in scrape(size, maximum_items_to_collect):
             yield item
     except GeneratorExit:
-        logging.info("GeneratorExit encountered in query. Closing the generator.")
+        logging.info("GeneratorExit encountered in query. Saving state and closing the generator.")
+        save_state(cached_items)
     finally:
         save_state(cached_items)
         # Add any necessary cleanup code here (e.g., closing connections)
