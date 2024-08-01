@@ -14,6 +14,8 @@ logging.getLogger('httpx').setLevel(logging.WARNING)  # Set httpx logging level 
 DEFAULT_SIZE = 20
 DEFAULT_MAXIMUM_ITEMS = 25  # Default maximum items to collect
 DELAY_SECONDS = 2  # Delay between each request in seconds
+RETRY_DELAY_SECONDS = 60  # Delay before retrying on server error
+RETRY_ATTEMPTS = 3  # Number of retry attempts on server error
 
 # Global cache for items
 cached_items = []
@@ -33,33 +35,44 @@ async def fetch_data(size: int):
         "size": size
     }
 
-    async with httpx.AsyncClient() as client:
-        await asyncio.sleep(DELAY_SECONDS)  # Add delay before each request
-        response = await client.post(url, headers=headers, json=data)
-        response.raise_for_status()
-        tweets = response.json().get("tweets", [])
+    attempts = 0
+    while attempts < RETRY_ATTEMPTS:
+        try:
+            async with httpx.AsyncClient() as client:
+                await asyncio.sleep(DELAY_SECONDS)  # Add delay before each request
+                response = await client.post(url, headers=headers, json=data)
+                response.raise_for_status()
+                tweets = response.json().get("tweets", [])
 
-        for tweet in tweets:
-            content = tweet.get("content_", "").strip()
-            if not content:
-                continue
+                for tweet in tweets:
+                    content = tweet.get("content_", "").strip()
+                    if not content:
+                        continue
 
-            post_author = tweet.get("author_", "[deleted]")
-            created_at = tweet.get("created_at_", "")
-            domain = tweet.get("domain_", "x.com")
-            url = tweet.get("url_", "")
-            external_id = tweet.get("external_id_", "")
+                    post_author = tweet.get("author_", "[deleted]")
+                    created_at = tweet.get("created_at_", "")
+                    domain = tweet.get("domain_", "x.com")
+                    url = tweet.get("url_", "")
+                    external_id = tweet.get("external_id_", "")
 
-            item = Item(
-                content=Content(content),
-                author=Author(hashlib.sha1(bytes(post_author, encoding="utf-8")).hexdigest()),
-                created_at=CreatedAt(format_created_at(created_at)),
-                domain=Domain(domain),
-                url=Url(url),
-                external_id=ExternalId(external_id)
-            )
+                    item = Item(
+                        content=Content(content),
+                        author=Author(hashlib.sha1(bytes(post_author, encoding="utf-8")).hexdigest()),
+                        created_at=CreatedAt(format_created_at(created_at)),
+                        domain=Domain(domain),
+                        url=Url(url),
+                        external_id=ExternalId(external_id)
+                    )
 
-            cached_items.append(item)
+                    cached_items.append(item)
+                break  # Break the loop if the request is successful
+        except httpx.HTTPStatusError as e:
+            logging.error(f"Server error {e.response.status_code} encountered. Retrying in {RETRY_DELAY_SECONDS} seconds...")
+            attempts += 1
+            await asyncio.sleep(RETRY_DELAY_SECONDS)
+        except Exception as e:
+            logging.error(f"An unexpected error occurred: {e}")
+            raise
 
 # Main scraping function
 async def scrape(size: int, maximum_items_to_collect: int) -> AsyncGenerator[Item, None]:
