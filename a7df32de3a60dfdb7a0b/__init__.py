@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import hashlib
+import json
 from typing import List, AsyncGenerator, Dict
 import httpx
 from datetime import datetime
@@ -15,6 +16,7 @@ DEFAULT_SIZE = 20
 DEFAULT_MAXIMUM_ITEMS = 25  # Default maximum items to collect
 DELAY_SECONDS = 2  # Delay between each request in seconds
 RETRY_DELAY_SECONDS = 60  # Delay before retrying after a 500 error
+STATE_FILE = "scraper_state.json"  # File to save the state
 
 # Global cache for items
 cached_items = []
@@ -73,6 +75,22 @@ async def fetch_data(size: int):
 
             cached_items.append(item)
 
+# Function to save the current state to a file
+def save_state(items: List[Item]):
+    """Save the current state to a file."""
+    with open(STATE_FILE, "w") as f:
+        json.dump([item.__dict__ for item in items], f)
+
+# Function to load the state from a file
+def load_state() -> List[Item]:
+    """Load the state from a file."""
+    try:
+        with open(STATE_FILE, "r") as f:
+            items_data = json.load(f)
+            return [Item(**item_data) for item_data in items_data]
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
 # Main scraping function
 async def scrape(size: int, maximum_items_to_collect: int) -> AsyncGenerator[Item, None]:
     """Scrape data and yield items up to the maximum specified."""
@@ -87,13 +105,16 @@ async def scrape(size: int, maximum_items_to_collect: int) -> AsyncGenerator[Ite
                 logging.info(f"Yielding item: {item}")
                 yield item
                 collected_items += 1
+                save_state([item])
             except GeneratorExit:
-                logging.info("GeneratorExit encountered within loop. Continuing processing.")
+                logging.info("GeneratorExit encountered within loop. Saving state and continuing processing.")
+                save_state([item])
                 # Re-raise the GeneratorExit after processing the current item
                 raise
     except GeneratorExit:
-        logging.info("GeneratorExit encountered in scrape. Closing the generator.")
+        logging.info("GeneratorExit encountered in scrape. Saving state and closing the generator.")
     finally:
+        save_state(cached_items)
         # Add any necessary cleanup code here (e.g., closing connections)
         pass
 
@@ -109,6 +130,7 @@ async def query(parameters: Dict) -> AsyncGenerator[Item, None]:
     except GeneratorExit:
         logging.info("GeneratorExit encountered in query. Closing the generator.")
     finally:
+        save_state(cached_items)
         # Add any necessary cleanup code here (e.g., closing connections)
         pass
 
@@ -119,3 +141,6 @@ async def gather_results(parameters: Dict) -> List[Item]:
     async for item in query(parameters):
         results.append(item)
     return results
+
+# Load the state on start
+cached_items = load_state()
