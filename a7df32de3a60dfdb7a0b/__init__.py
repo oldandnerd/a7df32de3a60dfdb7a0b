@@ -101,11 +101,11 @@ def load_state() -> List[Item]:
     try:
         with open(STATE_FILE, "r") as f:
             items_data = json.load(f)
-            items = [Item.from_dict(item_data) for item_data in items_data]
+            items = [SerializableItem.from_dict(item_data) for item_data in items_data]
             logging.info(f"Loaded state with {len(items)} items.")
             return items
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        logging.warning(f"No previous state found or error loading state: {e}")
+    except (FileNotFoundError, json.JSONDecodeError):
+        logging.info("No previous state found, starting fresh.")
         return []
     except Exception as e:
         logging.error(f"Error loading state: {e}")
