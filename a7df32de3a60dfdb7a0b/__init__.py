@@ -77,8 +77,6 @@ async def fetch_data(size: int):
 async def scrape(size: int, maximum_items_to_collect: int) -> AsyncGenerator[Item, None]:
     """Scrape data and yield items up to the maximum specified."""
     collected_items = 0
-    last_item = None
-
     try:
         while collected_items < maximum_items_to_collect:
             if not cached_items:
@@ -86,20 +84,15 @@ async def scrape(size: int, maximum_items_to_collect: int) -> AsyncGenerator[Ite
 
             try:
                 item = cached_items.pop(0)
-                last_item = item  # Store the last item
                 logging.info(f"Yielding item: {item}")
                 yield item
                 collected_items += 1
             except GeneratorExit:
-                logging.info("GeneratorExit encountered within loop. Putting last item back to cache.")
-                if last_item:
-                    cached_items.insert(0, last_item)
+                logging.info("GeneratorExit encountered within loop. Continuing processing.")
+                # Re-raise the GeneratorExit after processing the current item
                 raise
     except GeneratorExit:
-        logging.info("GeneratorExit encountered in scrape. Putting last item back to cache.")
-        if last_item:
-            cached_items.insert(0, last_item)
-        raise
+        logging.info("GeneratorExit encountered in scrape. Closing the generator.")
     finally:
         # Add any necessary cleanup code here (e.g., closing connections)
         pass
