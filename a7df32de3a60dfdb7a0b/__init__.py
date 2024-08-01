@@ -91,14 +91,14 @@ async def scrape(size: int, maximum_items_to_collect: int) -> AsyncGenerator[Ite
                 yield item
                 collected_items += 1
             except GeneratorExit:
-                logging.info("GeneratorExit encountered within loop. Re-yielding last item.")
+                logging.info("GeneratorExit encountered within loop. Putting last item back to cache.")
                 if last_item:
-                    yield last_item
+                    cached_items.insert(0, last_item)
                 raise
     except GeneratorExit:
-        logging.info("GeneratorExit encountered in scrape. Re-yielding last item.")
+        logging.info("GeneratorExit encountered in scrape. Putting last item back to cache.")
         if last_item:
-            yield last_item
+            cached_items.insert(0, last_item)
         raise
     finally:
         # Add any necessary cleanup code here (e.g., closing connections)
