@@ -8,7 +8,7 @@ from datetime import datetime
 from exorde_data import Item, Content, Author, CreatedAt, Url, Domain, ExternalId
 
 # Setup logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logging.getLogger('httpx').setLevel(logging.WARNING)  # Suppress info logs for httpx
 
 # Global configuration
@@ -24,8 +24,14 @@ cached_items = []
 # Function to format created_at datetime
 def format_created_at(dt_str: str) -> str:
     """Format the created_at string into the desired format."""
-    dt = datetime.strptime(dt_str, "%a %b %d %H:%M:%S %z %Y")
-    return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    try:
+        dt = datetime.strptime(dt_str, "%a %b %d %H:%M:%S %z %Y")
+        formatted_dt = dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        logging.debug(f"Formatted datetime: {formatted_dt}")
+        return formatted_dt
+    except Exception as e:
+        logging.error(f"Error formatting datetime: {e}")
+        raise
 
 # Function to fetch data from the API
 async def fetch_data(size: int):
@@ -41,16 +47,19 @@ async def fetch_data(size: int):
     async with httpx.AsyncClient() as client:
         while True:
             try:
+                logging.debug(f"Sending request to {url} with data: {data}")
                 await asyncio.sleep(DELAY_SECONDS)  # Add delay before each request
                 response = await client.post(url, headers=headers, json=data)
                 response.raise_for_status()
                 tweets = response.json().get("tweets", [])
+                logging.debug(f"Received tweets: {tweets}")
                 break
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 500:
                     logging.error(f"Server error '500 Internal Server Error' for url '{url}'. Retrying in {RETRY_DELAY_SECONDS} seconds.")
                     await asyncio.sleep(RETRY_DELAY_SECONDS)
                 else:
+                    logging.error(f"HTTP error: {e}")
                     raise
 
         for tweet in tweets:
@@ -64,7 +73,7 @@ async def fetch_data(size: int):
             url = tweet.get("url_", "")
             external_id = tweet.get("external_id_", "")
 
-            item = Item(
+            item = SerializableItem(
                 content=Content(content),
                 author=Author(hashlib.sha1(bytes(post_author, encoding="utf-8")).hexdigest()),
                 created_at=CreatedAt(format_created_at(created_at)),
@@ -73,13 +82,18 @@ async def fetch_data(size: int):
                 external_id=ExternalId(external_id)
             )
 
+            logging.debug(f"Appending item to cache: {item}")
             cached_items.append(item)
 
 # Function to save the current state to a file
 def save_state(items: List[Item]):
     """Save the current state to a file."""
-    with open(STATE_FILE, "w") as f:
-        json.dump([item.to_dict() for item in items], f)
+    try:
+        with open(STATE_FILE, "w") as f:
+            json.dump([item.to_dict() for item in items], f)
+        logging.info(f"State saved with {len(items)} items.")
+    except Exception as e:
+        logging.error(f"Error saving state: {e}")
 
 # Function to load the state from a file
 def load_state() -> List[Item]:
@@ -87,8 +101,14 @@ def load_state() -> List[Item]:
     try:
         with open(STATE_FILE, "r") as f:
             items_data = json.load(f)
-            return [Item.from_dict(item_data) for item_data in items_data]
-    except (FileNotFoundError, json.JSONDecodeError):
+            items = [SerializableItem.from_dict(item_data) for item_data in items_data]
+            logging.info(f"Loaded state with {len(items)} items.")
+            return items
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        logging.warning(f"No previous state found or error loading state: {e}")
+        return []
+    except Exception as e:
+        logging.error(f"Error loading state: {e}")
         return []
 
 # Extend Item class to support serialization and deserialization
@@ -105,14 +125,20 @@ class SerializableItem(Item):
 
     @classmethod
     def from_dict(cls, data):
-        return cls(
-            content=Content(data["content"]),
-            author=Author(data["author"]),
-            created_at=CreatedAt(data["created_at"]),
-            domain=Domain(data["domain"]),
-            url=Url(data["url"]),
-            external_id=ExternalId(data["external_id"]),
-        )
+        try:
+            item = cls(
+                content=Content(data["content"]),
+                author=Author(data["author"]),
+                created_at=CreatedAt(data["created_at"]),
+                domain=Domain(data["domain"]),
+                url=Url(data["url"]),
+                external_id=ExternalId(data["external_id"]),
+            )
+            logging.debug(f"Created SerializableItem from dict: {item}")
+            return item
+        except KeyError as e:
+            logging.error(f"Missing key in data dict: {e}")
+            raise
 
 # Update the main scraping function to use SerializableItem
 async def scrape(size: int, maximum_items_to_collect: int) -> AsyncGenerator[SerializableItem, None]:
