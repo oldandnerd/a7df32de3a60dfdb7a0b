@@ -89,6 +89,8 @@ async def fetch_data(size: int):
 def save_state(items: List[Item]):
     """Save the current state to a file."""
     try:
+        if json is None:
+            raise TypeError("json module is None")
         with open(STATE_FILE, "w") as f:
             json.dump([item.to_dict() for item in items], f)
         logging.info(f"State saved with {len(items)} items.")
