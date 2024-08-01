@@ -69,11 +69,15 @@ async def scrape(size: int, maximum_items_to_collect: int) -> AsyncGenerator[Ite
             if not cached_items:
                 await fetch_data(size)
 
-            while cached_items and collected_items < maximum_items_to_collect:
+            try:
                 item = cached_items.pop(0)
                 logging.info(f"Yielding item: {item}")
                 yield item
                 collected_items += 1
+            except GeneratorExit:
+                logging.info("GeneratorExit encountered within loop. Continuing processing.")
+                # Re-raise the GeneratorExit after processing the current item
+                raise
     except GeneratorExit:
         logging.info("GeneratorExit encountered in scrape. Closing the generator.")
     finally:
