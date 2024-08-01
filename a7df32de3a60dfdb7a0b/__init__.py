@@ -90,7 +90,11 @@ def save_state(items: List[Item]):
     """Save the current state to a file."""
     try:
         if json is None:
+            logging.error("json module is None")
             raise TypeError("json module is None")
+        if not callable(json.dump):
+            logging.error("json.dump is not callable")
+            raise TypeError("json.dump is not callable")
         with open(STATE_FILE, "w") as f:
             json.dump([item.to_dict() for item in items], f)
         logging.info(f"State saved with {len(items)} items.")
@@ -101,6 +105,12 @@ def save_state(items: List[Item]):
 def load_state() -> List[Item]:
     """Load the state from a file."""
     try:
+        if json is None:
+            logging.error("json module is None")
+            raise TypeError("json module is None")
+        if not callable(json.load):
+            logging.error("json.load is not callable")
+            raise TypeError("json.load is not callable")
         with open(STATE_FILE, "r") as f:
             items_data = json.load(f)
             items = [SerializableItem.from_dict(item_data) for item_data in items_data]
