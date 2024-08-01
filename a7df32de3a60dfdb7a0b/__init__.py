@@ -73,7 +73,7 @@ async def fetch_data(size: int):
             url = tweet.get("url_", "")
             external_id = tweet.get("external_id_", "")
 
-            item = SerializableItem(
+            item = Item(
                 content=Content(content),
                 author=Author(hashlib.sha1(bytes(post_author, encoding="utf-8")).hexdigest()),
                 created_at=CreatedAt(format_created_at(created_at)),
@@ -101,7 +101,7 @@ def load_state() -> List[Item]:
     try:
         with open(STATE_FILE, "r") as f:
             items_data = json.load(f)
-            items = [SerializableItem.from_dict(item_data) for item_data in items_data]
+            items = [Item.from_dict(item_data) for item_data in items_data]
             logging.info(f"Loaded state with {len(items)} items.")
             return items
     except (FileNotFoundError, json.JSONDecodeError) as e:
@@ -140,8 +140,8 @@ class SerializableItem(Item):
             logging.error(f"Missing key in data dict: {e}")
             raise
 
-# Update the main scraping function to use SerializableItem
-async def scrape(size: int, maximum_items_to_collect: int) -> AsyncGenerator[SerializableItem, None]:
+# Update the main scraping function to use Item from exorde_data
+async def scrape(size: int, maximum_items_to_collect: int) -> AsyncGenerator[Item, None]:
     """Scrape data and yield items up to the maximum specified."""
     collected_items = 0
 
@@ -173,7 +173,7 @@ async def scrape(size: int, maximum_items_to_collect: int) -> AsyncGenerator[Ser
         pass
 
 # Main interface function
-async def query(parameters: Dict) -> AsyncGenerator[SerializableItem, None]:
+async def query(parameters: Dict) -> AsyncGenerator[Item, None]:
     """Query interface for collecting items."""
     size = parameters.get("size", DEFAULT_SIZE)  # Use the global default size
     maximum_items_to_collect = parameters.get("maximum_items_to_collect", DEFAULT_MAXIMUM_ITEMS)  # Use the global default max items
@@ -190,7 +190,7 @@ async def query(parameters: Dict) -> AsyncGenerator[SerializableItem, None]:
         pass
 
 # Function to gather results for testing
-async def gather_results(parameters: Dict) -> List[SerializableItem]:
+async def gather_results(parameters: Dict) -> List[Item]:
     """Gather results for testing purposes."""
     results = []
     async for item in query(parameters):
