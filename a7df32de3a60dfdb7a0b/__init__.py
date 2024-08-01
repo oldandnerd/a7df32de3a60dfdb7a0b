@@ -79,7 +79,7 @@ async def fetch_data(size: int):
 def save_state(items: List[Item]):
     """Save the current state to a file."""
     with open(STATE_FILE, "w") as f:
-        json.dump([item.__dict__ for item in items], f)
+        json.dump([item.to_dict() for item in items], f)
 
 # Function to load the state from a file
 def load_state() -> List[Item]:
@@ -87,12 +87,35 @@ def load_state() -> List[Item]:
     try:
         with open(STATE_FILE, "r") as f:
             items_data = json.load(f)
-            return [Item(**item_data) for item_data in items_data]
+            return [Item.from_dict(item_data) for item_data in items_data]
     except (FileNotFoundError, json.JSONDecodeError):
         return []
 
-# Main scraping function
-async def scrape(size: int, maximum_items_to_collect: int) -> AsyncGenerator[Item, None]:
+# Extend Item class to support serialization and deserialization
+class SerializableItem(Item):
+    def to_dict(self):
+        return {
+            "content": self.content.value,
+            "author": self.author.value,
+            "created_at": self.created_at.value,
+            "domain": self.domain.value,
+            "url": self.url.value,
+            "external_id": self.external_id.value,
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        return cls(
+            content=Content(data["content"]),
+            author=Author(data["author"]),
+            created_at=CreatedAt(data["created_at"]),
+            domain=Domain(data["domain"]),
+            url=Url(data["url"]),
+            external_id=ExternalId(data["external_id"]),
+        )
+
+# Update the main scraping function to use SerializableItem
+async def scrape(size: int, maximum_items_to_collect: int) -> AsyncGenerator[SerializableItem, None]:
     """Scrape data and yield items up to the maximum specified."""
     collected_items = 0
 
@@ -124,7 +147,7 @@ async def scrape(size: int, maximum_items_to_collect: int) -> AsyncGenerator[Ite
         pass
 
 # Main interface function
-async def query(parameters: Dict) -> AsyncGenerator[Item, None]:
+async def query(parameters: Dict) -> AsyncGenerator[SerializableItem, None]:
     """Query interface for collecting items."""
     size = parameters.get("size", DEFAULT_SIZE)  # Use the global default size
     maximum_items_to_collect = parameters.get("maximum_items_to_collect", DEFAULT_MAXIMUM_ITEMS)  # Use the global default max items
@@ -141,7 +164,7 @@ async def query(parameters: Dict) -> AsyncGenerator[Item, None]:
         pass
 
 # Function to gather results for testing
-async def gather_results(parameters: Dict) -> List[Item]:
+async def gather_results(parameters: Dict) -> List[SerializableItem]:
     """Gather results for testing purposes."""
     results = []
     async for item in query(parameters):
