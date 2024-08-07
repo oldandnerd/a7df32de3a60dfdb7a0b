@@ -14,7 +14,7 @@ logging.getLogger('httpx').setLevel(logging.WARNING)  # Suppress info logs for h
 DEFAULT_SIZE = 20
 DEFAULT_MAXIMUM_ITEMS = 25  # Default maximum items to collect
 DELAY_SECONDS = 2  # Delay between each request in seconds
-RETRY_DELAY_SECONDS = 5  # Delay before retrying after a 500 error
+RETRY_DELAY_SECONDS = 60  # Delay before retrying after a 500 error
 
 # Global cache for items
 cached_items = []

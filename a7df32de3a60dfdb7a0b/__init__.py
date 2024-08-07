@@ -11,10 +11,10 @@ logging.basicConfig(level=logging.INFO)
 logging.getLogger('httpx').setLevel(logging.WARNING)  # Suppress info logs for httpx
 
 # Global configuration
-DEFAULT_SIZE = 31
+DEFAULT_SIZE = 20
 DEFAULT_MAXIMUM_ITEMS = 25  # Default maximum items to collect
 DELAY_SECONDS = 2  # Delay between each request in seconds
-RETRY_DELAY_SECONDS = 5  # Delay before retrying after a 500 error
+RETRY_DELAY_SECONDS = 5  # Delay before retrying after a 500 or 404 error
 
 # Global cache for items
 cached_items = []
@@ -45,8 +45,8 @@ async def fetch_data(size: int):
                 tweets = response.json().get("tweets", [])
                 break
             except httpx.HTTPStatusError as e:
-                if e.response.status_code == 500:
-                    logging.error(f"Server error '500 Internal Server Error' for url '{url}'. Retrying in {RETRY_DELAY_SECONDS} seconds.")
+                if e.response.status_code == 500 or e.response.status_code == 404:
+                    logging.error(f"Server error '{e.response.status_code} {e.response.reason_phrase}' for url '{url}'. Retrying in {RETRY_DELAY_SECONDS} seconds.")
                     await asyncio.sleep(RETRY_DELAY_SECONDS)
                 else:
                     raise
