@@ -13,6 +13,7 @@ logging.getLogger('httpx').setLevel(logging.WARNING)  # Suppress info logs for h
 # Global configuration
 DEFAULT_SIZE = 20
 DEFAULT_MAXIMUM_ITEMS = 25  # Default maximum items to collect
+DELAY_SECONDS = 2  # Delay between each request in seconds
 RETRY_DELAY_SECONDS = 5  # Delay before retrying after a 500 or 404 error
 
 # Global cache for items
@@ -38,6 +39,7 @@ async def fetch_data(size: int):
     async with httpx.AsyncClient() as client:
         while True:
             try:
+                await asyncio.sleep(DELAY_SECONDS)  # Add delay before each request
                 response = await client.post(url, headers=headers, json=data)
                 response.raise_for_status()
                 tweets = response.json().get("tweets", [])
@@ -48,9 +50,6 @@ async def fetch_data(size: int):
                     await asyncio.sleep(RETRY_DELAY_SECONDS)
                 else:
                     raise
-            except httpx.ReadTimeout:
-                logging.error(f"ReadTimeout error for url '{url}'. Retrying in {RETRY_DELAY_SECONDS} seconds.")
-                await asyncio.sleep(RETRY_DELAY_SECONDS)
 
         for tweet in tweets:
             content = tweet.get("content_", "").strip()
