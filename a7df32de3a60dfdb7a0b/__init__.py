@@ -11,7 +11,7 @@ logging.basicConfig(level=logging.INFO)
 logging.getLogger('httpx').setLevel(logging.WARNING)  # Suppress info logs for httpx
 
 # Global configuration
-DEFAULT_SIZE = 20
+DEFAULT_SIZE = 100
 DEFAULT_MAXIMUM_ITEMS = 25  # Default maximum items to collect
 RETRY_DELAY_SECONDS = 5  # Delay before retrying after a 500 or 404 error
 
