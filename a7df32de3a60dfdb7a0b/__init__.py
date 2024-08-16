@@ -27,7 +27,7 @@ def format_created_at(dt_str: str) -> str:
 # Function to fetch data from the API
 async def fetch_data(size: int):
     """Fetch data from the API and populate the global cache."""
-    url = "http://192.227.159.4:8000/get_tweets"
+    url = "http://169.254.100.180:8080/get_tweets"
     headers = {
         "Content-Type": "application/json"
     }
